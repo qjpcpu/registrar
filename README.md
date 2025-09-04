@@ -5,15 +5,24 @@
 
 Extra library of registrars (service discovery) for the Ergo Framework 3.0 (and above)
 
-## saturn
+Service Discovery and Configuration Management for your cluster.
+
+### etcd
+
+[![MIT license](https://img.shields.io/badge/license-MIT-brightgreen.svg)](observer/LICENSE)
+
+
+A `gen.Registrar` implementation for [etcd](https://etcd.io/) 
+
+Doc: https://docs.ergo.services/extra-library/registrars/etcd-client
+
+### saturn
 
 [![BSL 1.1](https://img.shields.io/badge/license-BSL_1.1-31af90.svg)](saturn/LICENSE)
-
-Service Discovery and Configuration Management for your cluster.
 
 This is a client library for the central registrar [Saturn](https://docs.ergo.services/tools/saturn). It allows you to register your node on the Saturn registrar and update the node's configuration on the fly.
 
 For commercial or production purposes, it is necessary [to purchase a licence](https://github.com/sponsors/ergo-services).
 
-Doc: https://docs.ergo.services/extra-library/registrars/saturn-slient
+Doc: https://docs.ergo.services/extra-library/registrars/saturn-client
 
