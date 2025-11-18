@@ -26,3 +26,11 @@ For commercial or production purposes, it is necessary [to purchase a licence](h
 
 Doc: https://docs.ergo.services/extra-library/registrars/saturn-client
 
+
+### ZooKeeper
+
+[![MIT license](https://img.shields.io/badge/license-MIT-brightgreen.svg)](zk/LICENSE)
+
+A `gen.Registrar` implementation for [Apache ZooKeeper](https://zookeeper.apache.org/)
+
+Doc: https://github.com/qjpcpu/registrar/tree/dev/zk
