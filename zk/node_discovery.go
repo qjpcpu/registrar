@@ -20,14 +20,13 @@ type NodeDiscovery struct {
 	Node gen.NodeRegistrar
 
 	/* options */
-	RootZnode           string
-	Log                 LogFn
-	Routes, AdvRoutes   *AtomicValue[[]gen.Route]
-	RoutesMapper        RoutesMapper
-	Shutdown            *CloseChan
-	RoleChangedListener RoleChangedListener
-	Event               *AtomicValue[gen.Event]
-	EventRef            *AtomicValue[gen.Ref]
+	RootZnode         string
+	Log               LogFn
+	Routes, AdvRoutes *AtomicValue[[]gen.Route]
+	RoutesMapper      RoutesMapper
+	Shutdown          *CloseChan
+	Event             *AtomicValue[gen.Event]
+	EventRef          *AtomicValue[gen.Ref]
 
 	/* state fields */
 	self            *Node             // Represents the current node's information.
@@ -46,7 +45,7 @@ func (nd *NodeDiscovery) ResolveNodes() (nodes []gen.Atom) {
 	nd.Members.Range(func(key any, value any) bool {
 		nodeName := key.(gen.Atom)
 		// skip self
-		if nd.self == nil || nodeName != nd.self.Name {
+		if nd.Node == nil || nd.Node.Name() != nodeName {
 			nodes = append(nodes, nodeName)
 		}
 		return true
@@ -121,21 +120,24 @@ func (nd *NodeDiscovery) init(routes []gen.Route) error {
 }
 
 func (nd *NodeDiscovery) startEventNotifyLoop() {
+	sendEvent := func(evt fmt.Stringer) {
+		if node := nd.Node; node != nil {
+			if err := node.SendEvent(nd.Event.Load().Name, nd.EventRef.Load(), gen.MessageOptions{}, evt); err != nil {
+				nd.Log("failed to send %s %v", evt.String(), err)
+			} else {
+				nd.Log("send event %s OK", evt.String())
+			}
+		}
+	}
 	go func() {
 		for {
 			select {
 			case role := <-nd.roleChangedChan:
-				if lis := nd.RoleChangedListener; lis != nil {
-					safeRun(nd.Log, func() { lis.OnRoleChanged(role) })
+				if node := nd.Node; node != nil {
+					sendEvent(buildRoleEvent(role, node.Name()))
 				}
 			case evt := <-nd.eventsCh:
-				if node := nd.Node; node != nil {
-					if err := node.SendEvent(nd.Event.Load().Name, nd.EventRef.Load(), gen.MessageOptions{}, evt); err != nil {
-						nd.Log("failed to send %s %v", evt.String(), err)
-					} else {
-						nd.Log("send event %s OK", evt.String())
-					}
-				}
+				sendEvent(evt)
 			case <-nd.Shutdown.C():
 				return
 			}

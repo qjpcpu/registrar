@@ -3,10 +3,8 @@ package zk
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -211,16 +209,16 @@ func (a *myActor) setupRegistrarMonitoring() error {
 	if err != nil {
 		return err
 	}
-	events, err := a.MonitorEvent(event)
+	_, err = a.MonitorEvent(event)
 	if err != nil {
 		return err
 	}
 
-	if len(events) > 0 {
-		for _, existingEvent := range events {
-			a.HandleEvent(existingEvent)
-		}
-	}
+	// if len(events) > 0 {
+	// 	for _, existingEvent := range events {
+	// 		a.HandleEvent(existingEvent)
+	// 	}
+	// }
 	return nil
 }
 
@@ -264,52 +262,6 @@ func TestNodesExcludeSelf(t *testing.T) {
 
 	mustTrue(t, len(nodes2) == 1, "node2 should see 1 other node")
 	mustTrue(t, nodes2[0] == node1.Name(), "node2 should see node1")
-}
-
-func TestResolveApplicationExcludeSelf(t *testing.T) {
-	result := NewResult()
-	node1 := startNode(t, result, "node1@localhost", "consumer")
-	node2 := startNode(t, result, "node2@localhost", "producer")
-	defer node1.StopForce()
-	defer node2.StopForce()
-
-	// Wait for nodes to register and applications to be available
-	select {
-	case <-time.After(time.Second * 5):
-	case <-result.done:
-	}
-
-	// Check from node1's perspective
-	reg1, err := node1.Network().Registrar()
-	mustSuccess(t, err)
-	resolver1 := reg1.Resolver()
-	var routes1 []gen.ApplicationRoute
-	for i := 0; i < 50; i++ {
-		routes1, err = resolver1.ResolveApplication("myapp")
-		if err == nil && len(routes1) > 0 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	mustSuccess(t, err)
-	mustTrue(t, len(routes1) == 1, "node1 should resolve 1 app route")
-	mustTrue(t, routes1[0].Node == node2.Name(), "node1 should resolve app route for node2")
-
-	// Check from node2's perspective
-	reg2, err := node2.Network().Registrar()
-	mustSuccess(t, err)
-	resolver2 := reg2.Resolver()
-	var routes2 []gen.ApplicationRoute
-	for i := 0; i < 50; i++ {
-		routes2, err = resolver2.ResolveApplication("myapp")
-		if err == nil && len(routes2) > 0 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	mustSuccess(t, err)
-	mustTrue(t, len(routes2) == 1, "node2 should resolve 1 app route")
-	mustTrue(t, routes2[0].Node == node1.Name(), "node2 should resolve app route for node1")
 }
 
 func startNodeWithRoutesMapper(t *testing.T, result *Result, nodeName, role, cluster string, mapper RoutesMapper) gen.Node {
@@ -389,94 +341,14 @@ func TestRoutesMapper(t *testing.T) {
 	mustTrue(t, registeredNode.Routes[0].Host == mappedHost, "host address was not mapped")
 }
 
-type testRoleListener struct {
-	mu    sync.Mutex
-	roles map[string]RoleType
-}
-
-func newTestRoleListener() *testRoleListener {
-	return &testRoleListener{
-		roles: make(map[string]RoleType),
-	}
-}
-
-func (l *testRoleListener) OnRoleChanged(role RoleType) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.roles[role.String()] = role
-}
-
-func (l *testRoleListener) getLeaders() int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	leaders := 0
-	for _, role := range l.roles {
-		if role == Leader {
-			leaders++
-		}
-	}
-	return leaders
-}
-func TestClusterWithOnlyOneLeader(t *testing.T) {
-	const cluster = "leader_election_test"
-	result := NewResult()
-	listener := newTestRoleListener()
-
-	nodes := []gen.Node{
-		startNodeWithCluster(t, result, "node1@localhost", "any", cluster, listener),
-		startNodeWithCluster(t, result, "node2@localhost", "any", cluster, listener),
-		startNodeWithCluster(t, result, "node3@localhost", "any", cluster, listener),
-	}
-	defer func() {
-		for _, n := range nodes {
-			n.StopForce()
-		}
-	}()
-
-	// Wait for nodes to register and leader to be elected
-	time.Sleep(5 * time.Second)
-
-	// 1. Initial election
-	mustTrue(t, listener.getLeaders() == 1, fmt.Sprintf("expected 1 leader, got %d", listener.getLeaders()))
-
-	// 2. Stop the leader and check for re-election
-	var leaderNode gen.Node
-	for _, node := range nodes {
-		reg, _ := node.Network().Registrar()
-		zkReg := reg.(*client)
-		if zkReg.nodeDisc.role == Leader {
-			leaderNode = node
-			break
-		}
-	}
-
-	if leaderNode != nil {
-		leaderNode.StopForce()
-		// remove leader from nodes
-		for i, n := range nodes {
-			if n == leaderNode {
-				nodes = append(nodes[:i], nodes[i+1:]...)
-				break
-			}
-		}
-	} else {
-		t.Fatal("no leader found to stop")
-	}
-
-	// Wait for re-election
-	time.Sleep(5 * time.Second)
-	mustTrue(t, listener.getLeaders() == 1, fmt.Sprintf("expected 1 leader after re-election, got %d", listener.getLeaders()))
-}
-
-func startNodeWithCluster(t *testing.T, result *Result, nodeName, role, cluster string, listener RoleChangedListener) gen.Node {
+func startNodeWithCluster(t *testing.T, result *Result, nodeName, role, cluster string) gen.Node {
 	var options gen.NodeOptions
 	eds, err := getTestEndpoints()
 	mustSuccess(t, err)
 	registrar, err := Create(Options{
-		Endpoints:   eds,
-		Cluster:     cluster,
-		ZkOptions:   []zk.ConnOption{zk.WithLogger(nozklog{})},
-		RoleChanged: listener,
+		Endpoints: eds,
+		Cluster:   cluster,
+		ZkOptions: []zk.ConnOption{zk.WithLogger(nozklog{})},
 	})
 	mustSuccess(t, err)
 	options.Network.Registrar = registrar
@@ -497,7 +369,7 @@ func TestNodeReregisterAfterZNodeDeleted(t *testing.T) {
 	const cluster = "reregister_test"
 	const nodeName = "node1@localhost"
 	result := NewResult()
-	node := startNodeWithCluster(t, result, nodeName, "any", cluster, nil)
+	node := startNodeWithCluster(t, result, nodeName, "any", cluster)
 	defer node.StopForce()
 
 	// Wait for the node to register

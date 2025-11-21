@@ -59,35 +59,47 @@ registrar, err := zk.Create(zk.Options{
 
 The registrar automatically performs leader election. You can listen for role changes to create actors that run only on the leader node. This is useful for singleton services or cluster-wide management tasks.
 
+The registrar broadcasts `zk.EventNodeSwitchedToLeader` and `zk.EventNodeSwitchedToFollower` events to the Ergo node's event bus. You can subscribe to these events to manage leader-specific actors.
+
 ```go
-type MyLeaderActor struct {
-    gen.Actor
+import (
+    "ergo.services/ergo/gen"
+    "ergo.services/registrar/zk"
+)
+
+type myActor struct {
+    act.Actor
 }
 
-func (a *MyLeaderActor) Init(pid gen.PID, args ...any) (gen.ActorState, error) {
+func (a *myActor) Init(pid gen.PID, args ...any) (gen.ActorState, error) {
     // ... initialize leader-specific state ...
-    return state, nil
+    return nil, nil
 }
 
-// ---
+// ... in your application setup ...
 
-var leaderPID gen.PID
+    // Subscribe to leader change events
+    MonitorNodeEvents(
+        zk.EventNodeSwitchedToLeader{},
+        zk.EventNodeSwitchedToFollower{},
+    )
 
-roleListener := func(role zk.RoleType) {
-    if role == zk.Leader {
-        // We are the leader, spawn the leader-specific actor
-        leaderPID, _ = node.Spawn(&MyLeaderActor{}, gen.ProcessOptions{})
-    } else {
-        // We are a follower, stop the actor if it was running
-        if leaderPID.IsAlive() {
+func (a *myActor) HandleEvent(event gen.MessageEvent) error {
+        // Receive events from the node's event bus
+        switch event.(type) {
+        case zk.EventNodeSwitchedToLeader:
+            // We are the new leader, spawn the leader-specific actor
+            leaderPID, _ = node.Spawn(&MyLeaderActor{}, gen.ProcessOptions{})
+
+        case zk.EventNodeSwitchedToFollower:
+            // We are now a follower, stop the actor if it's running
             node.Kill(leaderPID)
         }
-    }
 }
 
+// Create the registrar without the deprecated callback
 registrar, err := zk.Create(zk.Options{
-    Endpoints:     []string{"localhost:2181"},
-    RoleChanged:   zk.OnRoleChangedFunc(roleListener),
+    Endpoints: []string{"localhost:2181"},
 })
 ```
 

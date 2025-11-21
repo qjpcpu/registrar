@@ -41,7 +41,7 @@ type AppRouteDiscovery struct {
 
 // ResolveApp returns all known routes for a given application name from the local cache.
 func (ard *AppRouteDiscovery) ResolveApp(name gen.Atom) []gen.ApplicationRoute {
-	return ard.allAppRoutes.Load().GetRoutesExcludeSelf(name)
+	return ard.allAppRoutes.Load().GetRoutes(name)
 }
 
 // RegisterApplicationRoutes adds or updates application routes for the current node.
@@ -303,7 +303,7 @@ func (ard *AppRouteDiscovery) updateNodes(members []*AppRouteNode, reversion int
 			publish(n.ToApplicationRoute())
 		}
 	}
-	newMembers := newMembersBuilder.Build(ard.Node.Name())
+	newMembers := newMembersBuilder.Build()
 	oldMembers.Range(func(app gen.Atom, node gen.Atom, route gen.ApplicationRoute) bool {
 		if _, ok := newMembers.GetRoute(app, node); !ok {
 			ard.eventsCh <- EventApplicationStopped{Name: app, Node: node}

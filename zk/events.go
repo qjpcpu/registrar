@@ -29,6 +29,22 @@ func (e EventNodeLeft) String() string {
 	return fmt.Sprintf("EventNodeLeft<Name:%s>", e.Name.String())
 }
 
+type EventNodeSwitchedToLeader struct {
+	Name gen.Atom
+}
+
+func (e EventNodeSwitchedToLeader) String() string {
+	return fmt.Sprintf("EventNodeSwitchedToLeader<Name:%s>", e.Name.String())
+}
+
+type EventNodeSwitchedToFollower struct {
+	Name gen.Atom
+}
+
+func (e EventNodeSwitchedToFollower) String() string {
+	return fmt.Sprintf("EventNodeSwitchedToFollower<Name:%s>", e.Name.String())
+}
+
 // Application lifecycle events
 type EventApplicationLoaded struct {
 	Name   gen.Atom

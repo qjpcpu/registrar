@@ -111,13 +111,11 @@ func (m *AppRoutesMapBuilder) Set(n *AppRouteNode) {
 	inner[n.Node] = n.ToApplicationRoute()
 }
 
-func (m *AppRoutesMapBuilder) Build(self gen.Atom) AppRoutesMap {
+func (m *AppRoutesMapBuilder) Build() AppRoutesMap {
 	for app, inner := range m.data {
 		routes := make([]gen.ApplicationRoute, 0, len(inner))
 		for _, route := range inner {
-			if route.Node != self {
-				routes = append(routes, route)
-			}
+			routes = append(routes, route)
 		}
 		sort.SliceStable(routes, func(i, j int) bool {
 			if routes[i].Name != routes[j].Name {
@@ -125,25 +123,25 @@ func (m *AppRoutesMapBuilder) Build(self gen.Atom) AppRoutesMap {
 			}
 			return routes[i].Node < routes[j].Node
 		})
-		m.excludeSelfRoutes[app] = routes
+		m.routes[app] = routes
 	}
 	return AppRoutesMap(*m)
 }
 
 type AppRoutesMap struct {
-	data              map[gen.Atom]map[gen.Atom]gen.ApplicationRoute
-	excludeSelfRoutes map[gen.Atom][]gen.ApplicationRoute
+	data   map[gen.Atom]map[gen.Atom]gen.ApplicationRoute
+	routes map[gen.Atom][]gen.ApplicationRoute
 }
 
 func EmptyAppRoutesMap() AppRoutesMap {
 	return AppRoutesMap{
-		data:              make(map[gen.Atom]map[gen.Atom]gen.ApplicationRoute),
-		excludeSelfRoutes: make(map[gen.Atom][]gen.ApplicationRoute),
+		data:   make(map[gen.Atom]map[gen.Atom]gen.ApplicationRoute),
+		routes: make(map[gen.Atom][]gen.ApplicationRoute),
 	}
 }
 
-func (m AppRoutesMap) GetRoutesExcludeSelf(app gen.Atom) (routes []gen.ApplicationRoute) {
-	return m.excludeSelfRoutes[app]
+func (m AppRoutesMap) GetRoutes(app gen.Atom) (routes []gen.ApplicationRoute) {
+	return m.routes[app]
 }
 
 func (m AppRoutesMap) GetRoute(app, node gen.Atom) (gen.ApplicationRoute, bool) {

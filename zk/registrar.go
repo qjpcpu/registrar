@@ -19,7 +19,7 @@ func (c *client) Register(node gen.NodeRegistrar, routes gen.RegisterRoutes) (ge
 	c.nodeDisc.Node = node
 	c.appDisc.Node = node
 	eventName := gen.Atom(c.nodeDisc.RootZnode)
-	eventRef, err := node.RegisterEvent(eventName, gen.EventOptions{})
+	eventRef, err := node.RegisterEvent(eventName, gen.EventOptions{Buffer: 64})
 	if err != nil {
 		return gen.StaticRoutes{}, err
 	}
@@ -54,7 +54,7 @@ func (c *client) UnregisterApplicationRoute(name gen.Atom) error {
 	return c.appDisc.UnregisterApplicationRoute(name)
 }
 
-// Nodes returns a list of all discovered nodes in the cluster, excluding the node itself.
+// Nodes returns a list of all discovered nodes exclude self in the cluster
 func (c *client) Nodes() ([]gen.Atom, error) {
 	return c.nodeDisc.ResolveNodes(), nil
 }

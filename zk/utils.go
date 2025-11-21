@@ -1,6 +1,7 @@
 package zk
 
 import (
+	"ergo.services/ergo/gen"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,15 +38,6 @@ func stringContains(list []string, str string) bool {
 		}
 	}
 	return false
-}
-
-func safeRun(logger LogFn, fn func()) {
-	defer func() {
-		if r := recover(); r != nil {
-			logger("OnRoleChanged. %v", fmt.Errorf("%v\n%s", r, string(getRuntimeStack())))
-		}
-	}()
-	fn()
 }
 
 func getRuntimeStack() []byte {
@@ -132,4 +124,11 @@ func STDErrLog(f string, args ...any) {
 
 func buildZnode(names ...string) string {
 	return filepath.Join(names...)
+}
+
+func buildRoleEvent(role RoleType, node gen.Atom) fmt.Stringer {
+	if role == Leader {
+		return EventNodeSwitchedToLeader{Name: node}
+	}
+	return EventNodeSwitchedToFollower{Name: node}
 }

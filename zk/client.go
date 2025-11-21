@@ -49,15 +49,14 @@ func newClient(options *Options) *client {
 	aEvent := NewAtomicValue(gen.Event{})
 	aEventRef := NewAtomicValue(gen.Ref{})
 	nodeDisc := &NodeDiscovery{
-		RootZnode:           buildZnode(ZkRoot, options.Cluster, "nodes"),
-		Log:                 log_prefix(options.LogFn, "(registrar/nodes) "),
-		Routes:              NewAtomicValue([]gen.Route{}),
-		AdvRoutes:           NewAtomicValue([]gen.Route{}),
-		RoutesMapper:        options.RoutesMapper,
-		Shutdown:            shutdownCh,
-		RoleChangedListener: options.RoleChanged,
-		Event:               aEvent,
-		EventRef:            aEventRef,
+		RootZnode:    buildZnode(ZkRoot, options.Cluster, "nodes"),
+		Log:          log_prefix(options.LogFn, "(registrar/nodes) "),
+		Routes:       NewAtomicValue([]gen.Route{}),
+		AdvRoutes:    NewAtomicValue([]gen.Route{}),
+		RoutesMapper: options.RoutesMapper,
+		Shutdown:     shutdownCh,
+		Event:        aEvent,
+		EventRef:     aEventRef,
 
 		self:            &Node{},
 		role:            Follower,

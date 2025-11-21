@@ -21,10 +21,6 @@ type Options struct {
 	// Auth provides authentication credentials for accessing ZooKeeper.
 	Auth AuthConfig
 
-	// RoleChanged is a listener that is triggered when the node's role (Leader/Follower) changes.
-	// This is particularly useful for implementing actors that should only run on the leader node.
-	RoleChanged RoleChangedListener
-
 	// RoutesMapper is a function to modify the node's route information before it is published.
 	// This is useful for handling NAT traversal or specifying a broadcast address in containerized
 	// environments (e.g., Docker, Kubernetes).
@@ -64,6 +60,15 @@ func (za AuthConfig) isEmpty() bool {
 	return za.Scheme == "" && za.Credential == ""
 }
 
+func (o Options) getZKOptions(opts ...zk.ConnOption) []zk.ConnOption {
+	options := []zk.ConnOption{
+		zk.WithLogger(log_prefix(o.LogFn, "(registrar/zk) ")),
+	}
+	return append(options, opts...)
+}
+
+type RoutesMapper func([]gen.Route) []gen.Route
+
 type RoleType int
 
 const (
@@ -77,22 +82,3 @@ func (r RoleType) String() string {
 	}
 	return "FOLLOWER"
 }
-
-type RoleChangedListener interface {
-	OnRoleChanged(RoleType)
-}
-
-type OnRoleChangedFunc func(RoleType)
-
-func (fn OnRoleChangedFunc) OnRoleChanged(rt RoleType) {
-	fn(rt)
-}
-
-func (o Options) getZKOptions(opts ...zk.ConnOption) []zk.ConnOption {
-	options := []zk.ConnOption{
-		zk.WithLogger(log_prefix(o.LogFn, "(registrar/zk) ")),
-	}
-	return append(options, opts...)
-}
-
-type RoutesMapper func([]gen.Route) []gen.Route
