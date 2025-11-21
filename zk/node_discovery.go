@@ -20,15 +20,14 @@ type NodeDiscovery struct {
 	Node gen.NodeRegistrar
 
 	/* options */
-	RootZnode              string
-	Log                    LogFn
-	Routes, AdvRoutes      *AtomicValue[[]gen.Route]
-	RoutesMapper           RoutesMapper
-	Shutdown               *CloseChan
-	RoleChangedListener    RoleChangedListener
-	Event                  *AtomicValue[gen.Event]
-	EventRef               *AtomicValue[gen.Ref]
-	ExcludeSelfWhenResolve bool
+	RootZnode           string
+	Log                 LogFn
+	Routes, AdvRoutes   *AtomicValue[[]gen.Route]
+	RoutesMapper        RoutesMapper
+	Shutdown            *CloseChan
+	RoleChangedListener RoleChangedListener
+	Event               *AtomicValue[gen.Event]
+	EventRef            *AtomicValue[gen.Ref]
 
 	/* state fields */
 	self            *Node             // Represents the current node's information.
@@ -46,12 +45,8 @@ type NodeDiscovery struct {
 func (nd *NodeDiscovery) ResolveNodes() (nodes []gen.Atom) {
 	nd.Members.Range(func(key any, value any) bool {
 		nodeName := key.(gen.Atom)
-		if nd.ExcludeSelfWhenResolve {
-			// skip self
-			if nd.self == nil || nodeName != nd.self.Name {
-				nodes = append(nodes, nodeName)
-			}
-		} else {
+		// skip self
+		if nd.self == nil || nodeName != nd.self.Name {
 			nodes = append(nodes, nodeName)
 		}
 		return true

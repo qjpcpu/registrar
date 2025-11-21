@@ -1,9 +1,12 @@
 package zk
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -64,7 +67,11 @@ func startNode(t *testing.T, result *Result, nodeName, role string) gen.Node {
 	var options gen.NodeOptions
 	eds, err := getTestEndpoints()
 	mustSuccess(t, err)
-	registrar, err := Create(eds, WithCluster("basic_test"), WithZKOption(zk.WithLogger(nozklog{})))
+	registrar, err := Create(Options{
+		Endpoints: eds,
+		Cluster:   "basic_test",
+		ZkOptions: []zk.ConnOption{zk.WithLogger(nozklog{})},
+	})
 	mustSuccess(t, err)
 	options.Network.Registrar = registrar
 	options.Network.Acceptors = []gen.AcceptorOptions{{Host: "0.0.0.0", TCP: "tcp"}}
@@ -225,4 +232,349 @@ func (a *myActor) HandleEvent(event gen.MessageEvent) error {
 		a.result.Check()
 	}
 	return nil
+}
+
+func TestNodesExcludeSelf(t *testing.T) {
+	result := NewResult()
+	node1 := startNode(t, result, "node1@localhost", "consumer")
+	node2 := startNode(t, result, "node2@localhost", "producer")
+	defer node1.StopForce()
+	defer node2.StopForce()
+
+	// Wait for nodes to register
+	select {
+	case <-time.After(time.Second * 5):
+	case <-result.done:
+	}
+
+	reg1, err := node1.Network().Registrar()
+	mustSuccess(t, err)
+
+	nodes1, err := reg1.Nodes()
+	mustSuccess(t, err)
+
+	mustTrue(t, len(nodes1) == 1, "node1 should see 1 other node")
+	mustTrue(t, nodes1[0] == node2.Name(), "node1 should see node2")
+
+	reg2, err := node2.Network().Registrar()
+	mustSuccess(t, err)
+
+	nodes2, err := reg2.Nodes()
+	mustSuccess(t, err)
+
+	mustTrue(t, len(nodes2) == 1, "node2 should see 1 other node")
+	mustTrue(t, nodes2[0] == node1.Name(), "node2 should see node1")
+}
+
+func TestResolveApplicationExcludeSelf(t *testing.T) {
+	result := NewResult()
+	node1 := startNode(t, result, "node1@localhost", "consumer")
+	node2 := startNode(t, result, "node2@localhost", "producer")
+	defer node1.StopForce()
+	defer node2.StopForce()
+
+	// Wait for nodes to register and applications to be available
+	select {
+	case <-time.After(time.Second * 5):
+	case <-result.done:
+	}
+
+	// Check from node1's perspective
+	reg1, err := node1.Network().Registrar()
+	mustSuccess(t, err)
+	resolver1 := reg1.Resolver()
+	var routes1 []gen.ApplicationRoute
+	for i := 0; i < 50; i++ {
+		routes1, err = resolver1.ResolveApplication("myapp")
+		if err == nil && len(routes1) > 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	mustSuccess(t, err)
+	mustTrue(t, len(routes1) == 1, "node1 should resolve 1 app route")
+	mustTrue(t, routes1[0].Node == node2.Name(), "node1 should resolve app route for node2")
+
+	// Check from node2's perspective
+	reg2, err := node2.Network().Registrar()
+	mustSuccess(t, err)
+	resolver2 := reg2.Resolver()
+	var routes2 []gen.ApplicationRoute
+	for i := 0; i < 50; i++ {
+		routes2, err = resolver2.ResolveApplication("myapp")
+		if err == nil && len(routes2) > 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	mustSuccess(t, err)
+	mustTrue(t, len(routes2) == 1, "node2 should resolve 1 app route")
+	mustTrue(t, routes2[0].Node == node1.Name(), "node2 should resolve app route for node1")
+}
+
+func startNodeWithRoutesMapper(t *testing.T, result *Result, nodeName, role, cluster string, mapper RoutesMapper) gen.Node {
+	var options gen.NodeOptions
+	eds, err := getTestEndpoints()
+	mustSuccess(t, err)
+	registrar, err := Create(Options{
+		Endpoints:    eds,
+		Cluster:      cluster,
+		ZkOptions:    []zk.ConnOption{zk.WithLogger(nozklog{})},
+		RoutesMapper: mapper,
+	})
+	mustSuccess(t, err)
+	options.Network.Registrar = registrar
+	options.Network.Acceptors = []gen.AcceptorOptions{{Host: "0.0.0.0", TCP: "tcp"}}
+	options.Network.Cookie = "test-cookie-123"
+	apps := []gen.ApplicationBehavior{
+		CreateApp(role, result),
+	}
+	options.Applications = apps
+	options.Log.DefaultLogger.Disable = true
+
+	node, err := ergo.StartNode(gen.Atom(nodeName), options)
+	mustSuccess(t, err)
+	return node
+}
+
+func TestRoutesMapper(t *testing.T) {
+	const mappedHost = "127.0.0.1"
+	const nodeName = "node1@localhost"
+	const cluster = "routes_mapper_test"
+
+	result := NewResult()
+	mapper := func(routes []gen.Route) []gen.Route {
+		for i := range routes {
+			routes[i].Host = mappedHost
+		}
+		return routes
+	}
+	// use a different cluster name to avoid conflict
+	node := startNodeWithRoutesMapper(t, result, nodeName, "consumer", cluster, mapper)
+	defer node.StopForce() // this will trigger cleanup of ephemeral nodes
+
+	eds, err := getTestEndpoints()
+	mustSuccess(t, err)
+	conn, _, err := zk.Connect(eds, 5*time.Second, zk.WithLogger(nozklog{}))
+	mustSuccess(t, err)
+	defer conn.Close()
+
+	basePath := buildZnode(ZkRoot, cluster, "nodes")
+
+	var nodePath string
+	var data []byte
+	var children []string
+	// retry for 5 seconds
+	for i := 0; i < 50; i++ {
+		children, _, _ = conn.Children(basePath)
+		if len(children) > 0 {
+			nodePath = buildZnode(basePath, children[0])
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if nodePath == "" {
+		t.Fatal("znode was not created in time at path: ", basePath)
+	}
+
+	data, _, err = conn.Get(nodePath)
+	mustSuccess(t, err)
+
+	var registeredNode Node
+	err = json.Unmarshal(data, &registeredNode)
+	mustSuccess(t, err)
+
+	mustTrue(t, len(registeredNode.Routes) > 0, "no routes found in registered node")
+	mustTrue(t, registeredNode.Routes[0].Host == mappedHost, "host address was not mapped")
+}
+
+type testRoleListener struct {
+	mu    sync.Mutex
+	roles map[string]RoleType
+}
+
+func newTestRoleListener() *testRoleListener {
+	return &testRoleListener{
+		roles: make(map[string]RoleType),
+	}
+}
+
+func (l *testRoleListener) OnRoleChanged(role RoleType) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.roles[role.String()] = role
+}
+
+func (l *testRoleListener) getLeaders() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	leaders := 0
+	for _, role := range l.roles {
+		if role == Leader {
+			leaders++
+		}
+	}
+	return leaders
+}
+func TestClusterWithOnlyOneLeader(t *testing.T) {
+	const cluster = "leader_election_test"
+	result := NewResult()
+	listener := newTestRoleListener()
+
+	nodes := []gen.Node{
+		startNodeWithCluster(t, result, "node1@localhost", "any", cluster, listener),
+		startNodeWithCluster(t, result, "node2@localhost", "any", cluster, listener),
+		startNodeWithCluster(t, result, "node3@localhost", "any", cluster, listener),
+	}
+	defer func() {
+		for _, n := range nodes {
+			n.StopForce()
+		}
+	}()
+
+	// Wait for nodes to register and leader to be elected
+	time.Sleep(5 * time.Second)
+
+	// 1. Initial election
+	mustTrue(t, listener.getLeaders() == 1, fmt.Sprintf("expected 1 leader, got %d", listener.getLeaders()))
+
+	// 2. Stop the leader and check for re-election
+	var leaderNode gen.Node
+	for _, node := range nodes {
+		reg, _ := node.Network().Registrar()
+		zkReg := reg.(*client)
+		if zkReg.nodeDisc.role == Leader {
+			leaderNode = node
+			break
+		}
+	}
+
+	if leaderNode != nil {
+		leaderNode.StopForce()
+		// remove leader from nodes
+		for i, n := range nodes {
+			if n == leaderNode {
+				nodes = append(nodes[:i], nodes[i+1:]...)
+				break
+			}
+		}
+	} else {
+		t.Fatal("no leader found to stop")
+	}
+
+	// Wait for re-election
+	time.Sleep(5 * time.Second)
+	mustTrue(t, listener.getLeaders() == 1, fmt.Sprintf("expected 1 leader after re-election, got %d", listener.getLeaders()))
+}
+
+func startNodeWithCluster(t *testing.T, result *Result, nodeName, role, cluster string, listener RoleChangedListener) gen.Node {
+	var options gen.NodeOptions
+	eds, err := getTestEndpoints()
+	mustSuccess(t, err)
+	registrar, err := Create(Options{
+		Endpoints:   eds,
+		Cluster:     cluster,
+		ZkOptions:   []zk.ConnOption{zk.WithLogger(nozklog{})},
+		RoleChanged: listener,
+	})
+	mustSuccess(t, err)
+	options.Network.Registrar = registrar
+	options.Network.Acceptors = []gen.AcceptorOptions{{Host: "0.0.0.0", TCP: "tcp"}}
+	options.Network.Cookie = "test-cookie-123"
+	apps := []gen.ApplicationBehavior{
+		CreateApp(role, result),
+	}
+	options.Applications = apps
+	options.Log.DefaultLogger.Disable = true
+
+	node, err := ergo.StartNode(gen.Atom(nodeName), options)
+	mustSuccess(t, err)
+	return node
+}
+
+func TestNodeReregisterAfterZNodeDeleted(t *testing.T) {
+	const cluster = "reregister_test"
+	const nodeName = "node1@localhost"
+	result := NewResult()
+	node := startNodeWithCluster(t, result, nodeName, "any", cluster, nil)
+	defer node.StopForce()
+
+	// Wait for the node to register
+	time.Sleep(5 * time.Second)
+
+	eds, err := getTestEndpoints()
+	mustSuccess(t, err)
+	conn, _, err := zk.Connect(eds, 5*time.Second, zk.WithLogger(nozklog{}))
+	mustSuccess(t, err)
+	defer conn.Close()
+
+	// Find the registered znode
+	basePath := buildZnode(ZkRoot, cluster, "nodes")
+	var children []string
+	var nodePath string
+	var stat *zk.Stat
+
+	// wait for node registration
+	for i := 0; i < 50; i++ {
+		children, _, err = conn.Children(basePath)
+		if err == nil && len(children) > 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	mustSuccess(t, err)
+
+	for _, child := range children {
+		data, _, _ := conn.Get(buildZnode(basePath, child))
+		if strings.Contains(string(data), nodeName) {
+			nodePath = buildZnode(basePath, child)
+			break
+		}
+	}
+	mustTrue(t, nodePath != "", "node not found in ZK")
+
+	// Get znode version before deleting
+	_, stat, err = conn.Get(nodePath)
+	mustSuccess(t, err)
+	initialCtime := stat.Ctime
+
+	// Delete the znode
+	err = conn.Delete(nodePath, -1)
+	mustSuccess(t, err)
+
+	// Wait for re-registration
+	time.Sleep(5 * time.Second)
+
+	// Check if the node is re-registered
+	for i := 0; i < 50; i++ {
+		children, _, err = conn.Children(basePath)
+		if err == nil && len(children) > 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	mustSuccess(t, err)
+
+	var newNodePath string
+	for _, child := range children {
+		data, _, _ := conn.Get(buildZnode(basePath, child))
+		if strings.Contains(string(data), nodeName) {
+			newNodePath = buildZnode(basePath, child)
+			break
+		}
+	}
+	mustTrue(t, newNodePath != "", "node not re-registered in ZK")
+
+	// Optional: Check if it's a new znode by comparing ctime
+	_, newStat, err := conn.Get(newNodePath)
+	mustSuccess(t, err)
+	mustTrue(t, newStat.Ctime > initialCtime, "znode ctime should be different after re-registration")
+
+	// Check if the node is in the member list
+	reg, err := node.Network().Registrar()
+	mustSuccess(t, err)
+	zkReg := reg.(*client)
+	_, foundInMembers := zkReg.nodeDisc.Members.Load(gen.Atom(nodeName))
+	mustTrue(t, foundInMembers, "node should be in the member list after re-registration")
 }

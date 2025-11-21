@@ -19,12 +19,7 @@ func (c *client) Resolve(name gen.Atom) ([]gen.Route, error) {
 	return value.(*Node).Routes, nil
 }
 
-// ResolveApplication returns all known routes for a given application name.
-//
-// By default, this implementation returns all routes, including those on the node itself.
-// This differs from the etcd registrar, which excludes self-node routes. To align with
-// the etcd behavior, create the registrar with the `ExcludeSelfWhenResolve(true)` option.
-// The design philosophy here is that a service registry should provide complete information.
+// ResolveApplication returns all known routes for a given application name, excluding the routes on the node itself.
 func (c *client) ResolveApplication(name gen.Atom) ([]gen.ApplicationRoute, error) {
 	routes := c.appDisc.ResolveApp(name)
 	if len(routes) > 0 {

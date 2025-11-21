@@ -22,12 +22,11 @@ type AppRouteDiscovery struct {
 	Node gen.NodeRegistrar
 
 	/* options */
-	RootZnode              string
-	Log                    LogFn
-	Shutdown               *CloseChan
-	Event                  *AtomicValue[gen.Event]
-	EventRef               *AtomicValue[gen.Ref]
-	ExcludeSelfWhenResolve bool
+	RootZnode string
+	Log       LogFn
+	Shutdown  *CloseChan
+	Event     *AtomicValue[gen.Event]
+	EventRef  *AtomicValue[gen.Ref]
 
 	/* state fields */
 	myapps        sync.Map                   // Stores the application routes registered by this specific node. Key: gen.Atom(AppName), Value: *AppRouteNode.
@@ -42,10 +41,7 @@ type AppRouteDiscovery struct {
 
 // ResolveApp returns all known routes for a given application name from the local cache.
 func (ard *AppRouteDiscovery) ResolveApp(name gen.Atom) []gen.ApplicationRoute {
-	if ard.ExcludeSelfWhenResolve {
-		return ard.allAppRoutes.Load().GetRoutesExcludeSelf(name)
-	}
-	return ard.allAppRoutes.Load().GetRoutes(name)
+	return ard.allAppRoutes.Load().GetRoutesExcludeSelf(name)
 }
 
 // RegisterApplicationRoutes adds or updates application routes for the current node.

@@ -3,6 +3,7 @@ package zk
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"ergo.services/ergo/gen"
 	"github.com/qjpcpu/zk"
@@ -12,21 +13,7 @@ var (
 	ErrShutdown = errors.New("registrar shutdown")
 )
 
-type RoleType int
-
-const (
-	Follower RoleType = iota
-	Leader
-)
-
-const base_key = `/services/ergo`
-
-func (r RoleType) String() string {
-	if r == Leader {
-		return "LEADER"
-	}
-	return "FOLLOWER"
-}
+const ZkRoot = `/services/ergo`
 
 type client struct {
 	nodeDisc *NodeDiscovery
@@ -35,56 +22,11 @@ type client struct {
 	conn     zkConn
 }
 
-func Create(endpoints []string, opts ...Option) (gen.Registrar, error) {
-	zkCfg := makeConfig(endpoints, opts...)
-	shutdownCh := NewCloseChan()
-	aEvent := NewAtomicValue(gen.Event{})
-	aEventRef := NewAtomicValue(gen.Ref{})
-	nodeDisc := &NodeDiscovery{
-		RootZnode:              buildZnode(base_key, zkCfg.Cluster, "nodes"),
-		Log:                    log_prefix(zkCfg.LogFn, "(registrar/nodes) "),
-		Routes:                 NewAtomicValue([]gen.Route{}),
-		AdvRoutes:              NewAtomicValue([]gen.Route{}),
-		RoutesMapper:           zkCfg.RoutesMapper,
-		Shutdown:               shutdownCh,
-		RoleChangedListener:    zkCfg.RoleChanged,
-		Event:                  aEvent,
-		EventRef:               aEventRef,
-		ExcludeSelfWhenResolve: zkCfg.ExcludeSelfWhenResolve,
-
-		self:            &Node{},
-		role:            Follower,
-		roleChangedChan: make(chan RoleType, 1),
-		reWatch:         make(chan struct{}, 1),
-		eventsCh:        make(chan fmt.Stringer, 8),
-	}
-	appDisc := &AppRouteDiscovery{
-		RootZnode:              buildZnode(base_key, zkCfg.Cluster, "apps"),
-		Log:                    log_prefix(zkCfg.LogFn, "(registrar/apps) "),
-		Shutdown:               shutdownCh,
-		Event:                  aEvent,
-		EventRef:               aEventRef,
-		ExcludeSelfWhenResolve: zkCfg.ExcludeSelfWhenResolve,
-
-		myappsChanged:          make(chan struct{}, 8),
-		allAppRoutes:           NewAtomicValue(EmptyAppRoutesMap()),
-		reWatch:                make(chan struct{}, 1),
-		eventsCh:               make(chan fmt.Stringer, 8),
-	}
-	p := &client{
-		nodeDisc: nodeDisc,
-		appDisc:  appDisc,
-		shutdown: shutdownCh,
-	}
-	conn, err := connectZk(endpoints, zkCfg.SessionTimeout,
-		zkCfg.GetZKOptions(zk.WithEventCallback(multiOnEvent(nodeDisc.OnEvent, appDisc.OnEvent)))...)
+func Create(options Options) (gen.Registrar, error) {
+	p := newClient(&options)
+	conn, err := connectToZooKeeper(&options, p)
 	if err != nil {
 		return nil, err
-	}
-	if auth := zkCfg.Auth; !auth.isEmpty() {
-		if err = conn.AddAuth(auth.Scheme, []byte(auth.Credential)); err != nil {
-			return nil, err
-		}
 	}
 	p.nodeDisc.Conn = conn
 	p.appDisc.Conn = conn
@@ -93,17 +35,83 @@ func Create(endpoints []string, opts ...Option) (gen.Registrar, error) {
 	return p, nil
 }
 
-func (p *client) Shutdown() (err error) {
-	p.shutdown.Close(func() {
-		err0 := p.nodeDisc.Stop()
+func newClient(options *Options) *client {
+	if options.Cluster == "" {
+		options.Cluster = "default"
+	}
+	if options.SessionTimeout == 0 {
+		options.SessionTimeout = time.Second * 10
+	}
+	if options.LogFn == nil {
+		options.LogFn = fn_mutelog
+	}
+	shutdownCh := NewCloseChan()
+	aEvent := NewAtomicValue(gen.Event{})
+	aEventRef := NewAtomicValue(gen.Ref{})
+	nodeDisc := &NodeDiscovery{
+		RootZnode:           buildZnode(ZkRoot, options.Cluster, "nodes"),
+		Log:                 log_prefix(options.LogFn, "(registrar/nodes) "),
+		Routes:              NewAtomicValue([]gen.Route{}),
+		AdvRoutes:           NewAtomicValue([]gen.Route{}),
+		RoutesMapper:        options.RoutesMapper,
+		Shutdown:            shutdownCh,
+		RoleChangedListener: options.RoleChanged,
+		Event:               aEvent,
+		EventRef:            aEventRef,
+
+		self:            &Node{},
+		role:            Follower,
+		roleChangedChan: make(chan RoleType, 1),
+		reWatch:         make(chan struct{}, 1),
+		eventsCh:        make(chan fmt.Stringer, 8),
+	}
+	appDisc := &AppRouteDiscovery{
+		RootZnode: buildZnode(ZkRoot, options.Cluster, "apps"),
+		Log:       log_prefix(options.LogFn, "(registrar/apps) "),
+		Shutdown:  shutdownCh,
+		Event:     aEvent,
+		EventRef:  aEventRef,
+
+		myappsChanged: make(chan struct{}, 8),
+		allAppRoutes:  NewAtomicValue(EmptyAppRoutesMap()),
+		reWatch:       make(chan struct{}, 1),
+		eventsCh:      make(chan fmt.Stringer, 8),
+	}
+	return &client{
+		nodeDisc: nodeDisc,
+		appDisc:  appDisc,
+		shutdown: shutdownCh,
+	}
+}
+
+func connectToZooKeeper(options *Options, c *client) (zkConn, error) {
+	zkconn, _, err := zk.Connect(
+		options.Endpoints,
+		options.SessionTimeout,
+		options.getZKOptions(zk.WithEventCallback(multiOnEvent(c.nodeDisc.OnEvent, c.appDisc.OnEvent)))...)
+	if err != nil {
+		return nil, err
+	}
+	conn := &zkConnImpl{conn: zkconn}
+	if auth := options.Auth; !auth.isEmpty() {
+		if err = conn.AddAuth(auth.Scheme, []byte(auth.Credential)); err != nil {
+			return nil, err
+		}
+	}
+	return conn, nil
+}
+
+func (c *client) Shutdown() (err error) {
+	c.shutdown.Close(func() {
+		err0 := c.nodeDisc.Stop()
 		if err0 != nil {
 			err = err0
 		}
-		err0 = p.appDisc.Stop()
+		err0 = c.appDisc.Stop()
 		if err0 != nil {
 			err = err0
 		}
-		p.conn.Close()
+		c.conn.Close()
 	})
 	return
 }

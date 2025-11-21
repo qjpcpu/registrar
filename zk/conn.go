@@ -3,7 +3,6 @@ package zk
 import (
 	"fmt"
 	"path/filepath"
-	"time"
 
 	"github.com/qjpcpu/zk"
 )
@@ -20,14 +19,6 @@ type zkConn interface {
 	ChildrenW(path string) ([]string, *zk.Stat, <-chan zk.Event, error)
 	CreateProtectedEphemeralSequential(path string, data []byte, acl []zk.ACL) (string, error)
 	Close()
-}
-
-func connectZk(servers []string, sessionTimeout time.Duration, opts ...zk.ConnOption) (zkConn, error) {
-	conn, _, err := zk.Connect(servers, sessionTimeout, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return &zkConnImpl{conn: conn}, nil
 }
 
 type zkConnImpl struct {

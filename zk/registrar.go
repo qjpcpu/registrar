@@ -4,6 +4,11 @@ import (
 	"ergo.services/ergo/gen"
 )
 
+const (
+	RegistrarVersion = "R1"
+	RegistrarName    = "ZK Client"
+)
+
 // gen.Registrar interface implementation
 func (c *client) Register(node gen.NodeRegistrar, routes gen.RegisterRoutes) (gen.StaticRoutes, error) {
 	advRoutes := c.nodeDisc.RegisterRoutes(routes.Routes)
@@ -49,12 +54,7 @@ func (c *client) UnregisterApplicationRoute(name gen.Atom) error {
 	return c.appDisc.UnregisterApplicationRoute(name)
 }
 
-// Nodes returns a list of all discovered nodes in the cluster.
-//
-// By default, this implementation returns all nodes, including the node itself.
-// This differs from the etcd registrar, which excludes the self node. To align with
-// the etcd behavior, create the registrar with the `ExcludeSelfWhenResolve(true)` option.
-// The design philosophy here is that a service registry should provide complete information.
+// Nodes returns a list of all discovered nodes in the cluster, excluding the node itself.
 func (c *client) Nodes() ([]gen.Atom, error) {
 	return c.nodeDisc.ResolveNodes(), nil
 }
@@ -84,8 +84,8 @@ func (c *client) Info() gen.RegistrarInfo {
 
 func (c *client) Version() gen.Version {
 	return gen.Version{
-		Name:    "ZK Client",
-		Release: "R1",
+		Name:    RegistrarName,
+		Release: RegistrarVersion,
 		License: gen.LicenseMIT,
 	}
 }

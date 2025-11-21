@@ -33,4 +33,4 @@ Doc: https://docs.ergo.services/extra-library/registrars/saturn-client
 
 A `gen.Registrar` implementation for [Apache ZooKeeper](https://zookeeper.apache.org/)
 
-Doc: https://github.com/qjpcpu/registrar/tree/dev/zk
+Doc: https://github.com/qjpcpu/registrar/tree/master/zk

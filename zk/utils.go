@@ -22,8 +22,6 @@ func strToInt(s string) int {
 	return int(i)
 }
 
-func isStrBlank(s string) bool { return s == "" }
-
 func parseSeq(path string) (int, error) {
 	parts := strings.Split(path, "-")
 	if len(parts) == 1 {
