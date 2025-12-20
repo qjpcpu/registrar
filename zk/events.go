@@ -45,6 +45,15 @@ func (e EventNodeSwitchedToFollower) String() string {
 	return fmt.Sprintf("EventNodeSwitchedToFollower<Name:%s>", e.Name.String())
 }
 
+type EventNodeRoleHeartbeat struct {
+	Name gen.Atom
+	Role string
+}
+
+func (e EventNodeRoleHeartbeat) String() string {
+	return fmt.Sprintf("EventNodeRoleHeartbeat<Name:%s,Role:%s>", e.Name.String(), e.Role)
+}
+
 // Application lifecycle events
 type EventApplicationLoaded struct {
 	Name   gen.Atom

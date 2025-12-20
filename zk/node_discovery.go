@@ -130,11 +130,17 @@ func (nd *NodeDiscovery) startEventNotifyLoop() {
 		}
 	}
 	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
 		for {
 			select {
 			case role := <-nd.roleChangedChan:
 				if node := nd.Node; node != nil {
 					sendEvent(buildRoleEvent(role, node.Name()))
+				}
+			case <-ticker.C:
+				if node := nd.Node; node != nil {
+					sendEvent(buildRoleHeartbeatEvent(nd.role, node.Name()))
 				}
 			case evt := <-nd.eventsCh:
 				sendEvent(evt)
