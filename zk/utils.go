@@ -121,5 +121,5 @@ func buildRoleEvent(role RoleType, node gen.Atom) fmt.Stringer {
 }
 
 func buildRoleHeartbeatEvent(role RoleType, node gen.Atom) fmt.Stringer {
-	return EventNodeRoleHeartbeat{Name: node, Role: role.String()}
+	return EventNodeRoleHeartbeat{Name: node, Role: role}
 }

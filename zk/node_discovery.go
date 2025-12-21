@@ -129,7 +129,7 @@ func (nd *NodeDiscovery) startEventNotifyLoop() {
 		}
 	}
 	go func() {
-		ticker := time.NewTicker(time.Minute)
+		ticker := time.NewTicker(time.Minute * 5)
 		defer ticker.Stop()
 		for {
 			select {
