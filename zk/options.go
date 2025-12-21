@@ -26,9 +26,6 @@ type Options struct {
 	// environments (e.g., Docker, Kubernetes).
 	RoutesMapper RoutesMapper
 
-	// LogFn is a custom logging function for internal registrar output. Defaults to a silent logger.
-	LogFn LogFn
-
 	// ZkOptions allows passing native go-zk library connection options for advanced configuration.
 	ZkOptions []zk.ConnOption
 }
@@ -60,9 +57,14 @@ func (za AuthConfig) isEmpty() bool {
 	return za.Scheme == "" && za.Credential == ""
 }
 
-func (o Options) getZKOptions(opts ...zk.ConnOption) []zk.ConnOption {
+func (o Options) getZKOptions(nd *NodeDiscovery, opts ...zk.ConnOption) []zk.ConnOption {
+	logger := LogFn(func(s string, a ...any) {
+		if node := nd.Node; node != nil {
+			node.Log().Debug(`(registrar/zk) `+s, a...)
+		}
+	})
 	options := []zk.ConnOption{
-		zk.WithLogger(log_prefix(o.LogFn, "(registrar/zk) ")),
+		zk.WithLogger(logger),
 	}
 	return append(options, opts...)
 }

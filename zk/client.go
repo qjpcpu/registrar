@@ -42,15 +42,11 @@ func newClient(options *Options) *client {
 	if options.SessionTimeout == 0 {
 		options.SessionTimeout = time.Second * 10
 	}
-	if options.LogFn == nil {
-		options.LogFn = fn_mutelog
-	}
 	shutdownCh := NewCloseChan()
 	aEvent := NewAtomicValue(gen.Event{})
 	aEventRef := NewAtomicValue(gen.Ref{})
 	nodeDisc := &NodeDiscovery{
 		RootZnode:    buildZnode(ZkRoot, options.Cluster, "nodes"),
-		Log:          log_prefix(options.LogFn, "(registrar/nodes) "),
 		Routes:       NewAtomicValue([]gen.Route{}),
 		AdvRoutes:    NewAtomicValue([]gen.Route{}),
 		RoutesMapper: options.RoutesMapper,
@@ -66,7 +62,6 @@ func newClient(options *Options) *client {
 	}
 	appDisc := &AppRouteDiscovery{
 		RootZnode: buildZnode(ZkRoot, options.Cluster, "apps"),
-		Log:       log_prefix(options.LogFn, "(registrar/apps) "),
 		Shutdown:  shutdownCh,
 		Event:     aEvent,
 		EventRef:  aEventRef,
@@ -87,7 +82,7 @@ func connectToZooKeeper(options *Options, c *client) (zkConn, error) {
 	zkconn, _, err := zk.Connect(
 		options.Endpoints,
 		options.SessionTimeout,
-		options.getZKOptions(zk.WithEventCallback(multiOnEvent(c.nodeDisc.OnEvent, c.appDisc.OnEvent)))...)
+		options.getZKOptions(c.nodeDisc, zk.WithEventCallback(multiOnEvent(c.nodeDisc.OnEvent, c.appDisc.OnEvent)))...)
 	if err != nil {
 		return nil, err
 	}

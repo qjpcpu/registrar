@@ -23,7 +23,6 @@ type AppRouteDiscovery struct {
 
 	/* options */
 	RootZnode string
-	Log       LogFn
 	Shutdown  *CloseChan
 	Event     *AtomicValue[gen.Event]
 	EventRef  *AtomicValue[gen.Ref]
@@ -97,14 +96,14 @@ func (ard *AppRouteDiscovery) StartMember() error {
 	// register self
 	// This creates ephemeral sequential znodes for each application route of the current node.
 	if err := ard.registerService(); err != nil {
-		ard.Log("register service fail " + err.Error())
+		ard.Error("register service fail " + err.Error())
 		return err
 	}
 
 	// Fetch the initial list of all application routes from all nodes.
 	nodes, version, err := ard.fetchNodes()
 	if err != nil {
-		ard.Log("fetch app routes fail %v", err)
+		ard.Error("fetch app routes fail %v", err)
 		return err
 	}
 
@@ -117,7 +116,7 @@ func (ard *AppRouteDiscovery) StartMember() error {
 
 func (ard *AppRouteDiscovery) init() error {
 	if err := ensurePersistentNode(ard.Conn, ard.RootZnode); err != nil {
-		ard.Log("create dir node fail path=%s %v", ard.RootZnode, err)
+		ard.Error("create dir node fail path=%s %v", ard.RootZnode, err)
 		return err
 	}
 	return nil
@@ -144,18 +143,18 @@ func (ard *AppRouteDiscovery) registerService() (err error) {
 func (ard *AppRouteDiscovery) registerSingleAppRoute(node *AppRouteNode) error {
 	data, err := node.Serialize()
 	if err != nil {
-		ard.Log("register app route serialize fail. %v", err)
+		ard.Error("register app route serialize fail. %v", err)
 		return err
 	}
 
 	path, err := createEphemeralSequentialChildNode(ard.Conn, ard.znodeTag(node.Node), ard.RootZnode, data)
 	if err != nil {
-		ard.Log("create child node fail. node=%s %v", ard.RootZnode, err)
+		ard.Error("create child node fail. node=%s %v", ard.RootZnode, err)
 		return err
 	}
 	seq, err := parseSeq(path)
 	if err != nil {
-		ard.Log("create child node fail. node=%s %v", ard.RootZnode, err)
+		ard.Error("create child node fail. node=%s %v", ard.RootZnode, err)
 		return err
 	}
 	node.SetMeta(metaKeySeq, intToStr(seq))
@@ -209,9 +208,9 @@ func (ard *AppRouteDiscovery) removeDeprecatedAppRoute() error {
 	}
 	for _, path := range deprecated_paths {
 		if err = ard.Conn.Delete(path, -1); err != nil {
-			ard.Log("fail to remove deprecated znode %s %v", path, err)
+			ard.Error("fail to remove deprecated znode %s %v", path, err)
 		} else {
-			ard.Log("remove deprecated znode %s OK", path)
+			ard.Info("remove deprecated znode %s OK", path)
 		}
 	}
 	return nil
@@ -223,7 +222,7 @@ func (ard *AppRouteDiscovery) fetchNodes() ([]*AppRouteNode, int32, error) {
 	key := ard.RootZnode
 	children, stat, err := ard.Conn.Children(key)
 	if err != nil {
-		ard.Log("fetch nodes fail. path=%s %v", key, err)
+		ard.Error("fetch nodes fail. path=%s %v", key, err)
 		return nil, 0, err
 	}
 
@@ -232,17 +231,17 @@ func (ard *AppRouteDiscovery) fetchNodes() ([]*AppRouteNode, int32, error) {
 		long := filepath.Join(key, short)
 		value, _, err := ard.Conn.Get(long)
 		if err != nil {
-			ard.Log("fetch nodes fail. path=%s %v", long, err)
+			ard.Error("fetch nodes fail. path=%s %v", long, err)
 			return nil, stat.Cversion, err
 		}
 		n := &AppRouteNode{}
 		if err := n.Deserialize(value); err != nil {
-			ard.Log("fetch nodes deserialize fail. path=%s val=%s %v", long, string(value), err)
+			ard.Error("fetch nodes deserialize fail. path=%s val=%s %v", long, string(value), err)
 			return nil, stat.Cversion, err
 		}
 		seq, err := parseSeq(long)
 		if err != nil {
-			ard.Log("fetch nodes parse seq fail. path=%s val=%s %v", long, string(value), err)
+			ard.Error("fetch nodes parse seq fail. path=%s val=%s %v", long, string(value), err)
 			return nil, 0, err
 		} else {
 			n.SetMeta(metaKeySeq, intToStr(seq))
@@ -325,7 +324,7 @@ func (ard *AppRouteDiscovery) startWatching() {
 					return
 				}
 				if err != zk.ErrConnectionClosed {
-					ard.Log("failed to keepWatching. %v", err)
+					ard.Error("failed to keepWatching. %v", err)
 				}
 			}
 		}
@@ -353,12 +352,12 @@ func (ard *AppRouteDiscovery) addWatcher(ctx context.Context, clusterKey string)
 		return nil, err
 	}
 
-	ard.Log("watching path=%s children=%d cversion=%d", clusterKey, int(stat.NumChildren), stat.Cversion)
+	ard.Debug("watching path=%s children=%d cversion=%d", clusterKey, int(stat.NumChildren), stat.Cversion)
 	if !ard.isChildrenChanged(stat) {
 		return evtChan, nil
 	}
 
-	ard.Log("chilren changed, wait 1 sec and watch again old_cversion=%d new_cversion=%d", int(ard.revision), int(stat.Cversion))
+	ard.Info("chilren changed, wait 1 sec and watch again old_cversion=%d new_cversion=%d", int(ard.revision), int(stat.Cversion))
 	time.Sleep(1 * time.Second)
 	nodes, version, err := ard.fetchNodes()
 	if err != nil {
@@ -383,22 +382,22 @@ func (ard *AppRouteDiscovery) _keepWatching(stream <-chan zk.Event) error {
 	select {
 	case event := <-stream:
 		if err := event.Err; err != nil {
-			ard.Log("failure watching service. %v", err)
+			ard.Error("failure watching service. %v", err)
 			return err
 		}
 	case <-ard.reWatch:
-		ard.Log("zookeeper connection recoverd, check topo again.")
+		ard.Debug("zookeeper connection recoverd, check topo again.")
 	case <-ard.myappsChanged:
-		ard.Log("app routes changed, check topo again.")
+		ard.Debug("app routes changed, check topo again.")
 	case <-ard.Shutdown.C():
-		ard.Log("shutdown...")
+		ard.Info("shutdown...")
 		return ErrShutdown
 	}
 
 	// After any event, fetch the full list of routes to resynchronize the state.
 	nodes, version, err := ard.fetchNodes()
 	if err != nil {
-		ard.Log("failure fetch nodes when watching service. %v", err)
+		ard.Error("failure fetch nodes when watching service. %v", err)
 		return err
 	}
 	for !ard.containSelf(nodes) {
@@ -410,7 +409,7 @@ func (ard *AppRouteDiscovery) _keepWatching(stream <-chan zk.Event) error {
 		// reload nodes
 		nodes, version, err = ard.fetchNodes()
 		if err != nil {
-			ard.Log("failure fetch nodes when watching service. %v", err)
+			ard.Error("failure fetch nodes when watching service. %v", err)
 			return err
 		}
 		time.Sleep(time.Second)
@@ -450,7 +449,7 @@ func (ard *AppRouteDiscovery) containSelf(ns []*AppRouteNode) bool {
 func (ard *AppRouteDiscovery) Stop() (err error) {
 	err = ard.deregisterService()
 	if err != nil {
-		ard.Log("deregister app routes fail %v", err)
+		ard.Error("deregister app routes fail %v", err)
 		return
 	}
 	return
@@ -490,9 +489,9 @@ func (ard *AppRouteDiscovery) startEventNotifyLoop() {
 			case evt := <-ard.eventsCh:
 				if node := ard.Node; node != nil {
 					if err := node.SendEvent(ard.Event.Load().Name, ard.EventRef.Load(), gen.MessageOptions{}, evt); err != nil {
-						ard.Log("failed to send %s %v", evt.String(), err)
+						ard.Error("failed to send %s %v", evt.String(), err)
 					} else {
-						ard.Log("send event %s OK", evt.String())
+						ard.Info("send event %s OK", evt.String())
 					}
 				}
 			case <-ard.Shutdown.C():
@@ -500,4 +499,22 @@ func (ard *AppRouteDiscovery) startEventNotifyLoop() {
 			}
 		}
 	}()
+}
+
+func (ard *AppRouteDiscovery) Info(format string, args ...any) {
+	if node := ard.Node; node != nil {
+		node.Log().Info(`(registrar/apps)`+format, args...)
+	}
+}
+
+func (ard *AppRouteDiscovery) Debug(format string, args ...any) {
+	if node := ard.Node; node != nil {
+		node.Log().Debug(`(registrar/apps)`+format, args...)
+	}
+}
+
+func (ard *AppRouteDiscovery) Error(format string, args ...any) {
+	if node := ard.Node; node != nil {
+		node.Log().Error(`(registrar/apps)`+format, args...)
+	}
 }

@@ -3,7 +3,6 @@ package zk
 import (
 	"ergo.services/ergo/gen"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -108,18 +107,6 @@ func (fn LogFn) Log(f string, args ...any) {
 
 func (fn LogFn) Printf(f string, args ...any) {
 	fn(f, args...)
-}
-
-func log_prefix(fn LogFn, prefix string) LogFn {
-	return func(f string, args ...any) {
-		fn(prefix+f, args...)
-	}
-}
-
-func fn_mutelog(string, ...any) {}
-
-func STDErrLog(f string, args ...any) {
-	fmt.Fprintf(os.Stderr, f+"\n", args...)
 }
 
 func buildZnode(names ...string) string {

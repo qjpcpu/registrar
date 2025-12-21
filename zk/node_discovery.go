@@ -21,7 +21,6 @@ type NodeDiscovery struct {
 
 	/* options */
 	RootZnode         string
-	Log               LogFn
 	Routes, AdvRoutes *AtomicValue[[]gen.Route]
 	RoutesMapper      RoutesMapper
 	Shutdown          *CloseChan
@@ -73,15 +72,15 @@ func (nd *NodeDiscovery) StartMember() error {
 	// register self
 	// This creates an ephemeral sequential znode in ZK.
 	if err := nd.registerService(); err != nil {
-		nd.Log("register service fail " + err.Error())
+		nd.Error("register service fail %v", err)
 		return err
 	}
-	nd.Log("starting node, register service: node=%s seq=%s", nd.self.Name, nd.self.Meta[metaKeySeq])
+	nd.Info("starting node, register service: node=%s seq=%s", nd.self.Name, nd.self.Meta[metaKeySeq])
 
 	// Fetch the initial list of all nodes in the cluster.
 	nodes, version, err := nd.fetchNodes()
 	if err != nil {
-		nd.Log("fetch nodes fail %v", err)
+		nd.Error("fetch nodes fail %v", err)
 		return err
 	}
 
@@ -113,7 +112,7 @@ func (nd *NodeDiscovery) init(routes []gen.Route) error {
 	nd.self.SetMeta(metaKeyID, string(nd.self.Name))
 
 	if err := ensurePersistentNode(nd.Conn, nd.RootZnode); err != nil {
-		nd.Log("create dir node fail path=%s %v", nd.RootZnode, err)
+		nd.Error("create dir node fail path=%s %v", nd.RootZnode, err)
 		return err
 	}
 	return nil
@@ -123,9 +122,9 @@ func (nd *NodeDiscovery) startEventNotifyLoop() {
 	sendEvent := func(evt fmt.Stringer) {
 		if node := nd.Node; node != nil {
 			if err := node.SendEvent(nd.Event.Load().Name, nd.EventRef.Load(), gen.MessageOptions{}, evt); err != nil {
-				nd.Log("failed to send %s %v", evt.String(), err)
+				nd.Error("failed to send %s %v", evt.String(), err)
 			} else {
-				nd.Log("send event %s OK", evt.String())
+				nd.Info("send event %s OK", evt.String())
 			}
 		}
 	}
@@ -156,23 +155,23 @@ func (nd *NodeDiscovery) startEventNotifyLoop() {
 func (nd *NodeDiscovery) registerService() error {
 	data, err := nd.self.Serialize()
 	if err != nil {
-		nd.Log("register node Serialize fail. %v", err)
+		nd.Error("register node Serialize fail. %v", err)
 		return err
 	}
 
 	path, err := createEphemeralSequentialChildNode(nd.Conn, "node", nd.RootZnode, data)
 	if err != nil {
-		nd.Log("create child node fail. node=%s %v", nd.RootZnode, err)
+		nd.Error("create child node fail. node=%s %v", nd.RootZnode, err)
 		return err
 	}
 	nd.fullpath = path
 	seq, err := parseSeq(path)
 	if err != nil {
-		nd.Log("create child node fail. node=%s %v", nd.RootZnode, err)
+		nd.Error("create child node fail. node=%s %v", nd.RootZnode, err)
 		return err
 	}
 	nd.self.SetMeta(metaKeySeq, intToStr(seq))
-	nd.Log("register node=%s seq=%d OK", nd.self.Name, seq)
+	nd.Debug("register node=%s seq=%d OK", nd.self.Name, seq)
 
 	return nil
 }
@@ -183,7 +182,7 @@ func (nd *NodeDiscovery) fetchNodes() ([]*Node, int32, error) {
 	key := nd.RootZnode
 	children, stat, err := nd.Conn.Children(key)
 	if err != nil {
-		nd.Log("fetch nodes fail. path=%s %v", key, err)
+		nd.Error("fetch nodes fail. path=%s %v", key, err)
 		return nil, 0, err
 	}
 
@@ -192,22 +191,22 @@ func (nd *NodeDiscovery) fetchNodes() ([]*Node, int32, error) {
 		long := filepath.Join(key, short)
 		value, _, err := nd.Conn.Get(long)
 		if err != nil {
-			nd.Log("fetch nodes fail. path=%s %v", long, err)
+			nd.Error("fetch nodes fail. path=%s %v", long, err)
 			return nil, stat.Cversion, err
 		}
 		n := Node{Meta: make(map[string]string)}
 		if err := n.Deserialize(value); err != nil {
-			nd.Log("fetch nodes deserialize fail. path=%s val=%s %v", long, string(value), err)
+			nd.Error("fetch nodes deserialize fail. path=%s val=%s %v", long, string(value), err)
 			return nil, stat.Cversion, err
 		}
 		seq, err := parseSeq(long)
 		if err != nil {
-			nd.Log("fetch nodes parse seq fail. path=%s val=%s %v", long, string(value), err)
+			nd.Error("fetch nodes parse seq fail. path=%s val=%s %v", long, string(value), err)
 			return nil, 0, err
 		} else {
 			n.SetMeta(metaKeySeq, intToStr(seq))
 		}
-		nd.Log("fetched new node. node=%s path=%s seq=%d", n.Name, long, seq)
+		nd.Debug("fetched new node. node=%s path=%s seq=%d", n.Name, long, seq)
 		nodes = append(nodes, &n)
 	}
 	return nd.uniqNodes(nodes), stat.Cversion, nil
@@ -273,7 +272,7 @@ func (nd *NodeDiscovery) updateLeadership(ns []*Node) {
 		role = Leader
 	}
 	if role != nd.role {
-		nd.Log("role changed from=%s to=%s", nd.role.String(), role.String())
+		nd.Info("role changed from=%s to=%s", nd.role.String(), role.String())
 		nd.role = role
 		nd.roleChangedChan <- role
 	}
@@ -292,7 +291,7 @@ func (nd *NodeDiscovery) isLeaderOf(ns []*Node) bool {
 	minSeq := seqList.Min()
 	for _, node := range ns {
 		if nd.self != nil && node.Name == nd.self.Name {
-			nd.Log("check self leadership, self_seq=%d min_seq=%d is_leader=%t",
+			nd.Debug("check self leadership, self_seq=%d min_seq=%d is_leader=%t",
 				nd.self.GetSeq(),
 				minSeq,
 				minSeq == nd.self.GetSeq(),
@@ -301,13 +300,13 @@ func (nd *NodeDiscovery) isLeaderOf(ns []*Node) bool {
 		}
 	}
 	if nd.self != nil {
-		nd.Log("I'm follower self_seq=%d min_seq=%d seq_list=%s",
+		nd.Debug("I'm follower self_seq=%d min_seq=%d seq_list=%s",
 			nd.self.GetSeq(),
 			minSeq,
 			seqList.String(),
 		)
 	} else {
-		nd.Log("I'm follower, self node info is blank")
+		nd.Debug("I'm follower, self node info is blank")
 	}
 	return false
 }
@@ -323,7 +322,7 @@ func (nd *NodeDiscovery) startWatching() {
 					return
 				}
 				if err != zk.ErrConnectionClosed {
-					nd.Log("failed to keepWatching. %v", err)
+					nd.Error("failed to keepWatching. %v", err)
 				}
 			}
 		}
@@ -351,12 +350,12 @@ func (nd *NodeDiscovery) addWatcher(ctx context.Context, clusterKey string) (<-c
 		return nil, err
 	}
 
-	nd.Log("watching path=%s children=%d cversion=%d", clusterKey, int(stat.NumChildren), stat.Cversion)
+	nd.Debug("watching path=%s children=%d cversion=%d", clusterKey, int(stat.NumChildren), stat.Cversion)
 	if !nd.isChildrenChanged(stat) {
 		return evtChan, nil
 	}
 
-	nd.Log("chilren changed, wait 1 sec and watch again old_cversion=%d new_cversion=%d", int(nd.revision), int(stat.Cversion))
+	nd.Debug("chilren changed, wait 1 sec and watch again old_cversion=%d new_cversion=%d", int(nd.revision), int(stat.Cversion))
 	time.Sleep(1 * time.Second)
 	nodes, version, err := nd.fetchNodes()
 	if err != nil {
@@ -381,24 +380,24 @@ func (nd *NodeDiscovery) _keepWatching(stream <-chan zk.Event) error {
 	select {
 	case event := <-stream:
 		if err := event.Err; err != nil {
-			nd.Log("failure watching service. %v", err)
+			nd.Error("failure watching service. %v", err)
 			if childrenNotContains(nd.Conn, nd.RootZnode, filepath.Base(nd.fullpath)) {
-				nd.Log("node register info lost, register self again")
+				nd.Debug("node register info lost, register self again")
 				nd.registerService()
 			}
 			return err
 		}
 	case <-nd.reWatch:
-		nd.Log("zookeeper connection recoverd, check topo again.")
+		nd.Debug("zookeeper connection recoverd, check topo again.")
 	case <-nd.Shutdown.C():
-		nd.Log("shutdown...")
+		nd.Info("shutdown...")
 		return ErrShutdown
 	}
 
 	// After any event, fetch the full list of nodes to resynchronize the state.
 	nodes, version, err := nd.fetchNodes()
 	if err != nil {
-		nd.Log("failure fetch nodes when watching service. %v", err)
+		nd.Error("failure fetch nodes when watching service. %v", err)
 		return err
 	}
 	for !nd.containSelf(nodes) {
@@ -410,7 +409,7 @@ func (nd *NodeDiscovery) _keepWatching(stream <-chan zk.Event) error {
 		// reload nodes
 		nodes, version, err = nd.fetchNodes()
 		if err != nil {
-			nd.Log("failure fetch nodes when watching service. %v", err)
+			nd.Error("failure fetch nodes when watching service. %v", err)
 			return err
 		}
 		time.Sleep(time.Second)
@@ -437,9 +436,9 @@ func (nd *NodeDiscovery) containSelf(ns []*Node) bool {
 	}
 	if !bContainSelf {
 		if nd.self == nil {
-			nd.Log("I'm lost and self is blank")
+			nd.Info("I'm lost and self is blank")
 		} else {
-			nd.Log("I'm lost node=%s seq=%d", nd.self.Name, nd.self.GetSeq())
+			nd.Info("I'm lost node=%s seq=%d", nd.self.Name, nd.self.GetSeq())
 		}
 	}
 	return bContainSelf
@@ -450,7 +449,7 @@ func (nd *NodeDiscovery) Stop() (err error) {
 	nd.updateLeadership(nil)
 	err = nd.deregisterService()
 	if err != nil {
-		nd.Log("deregister node member %v", err)
+		nd.Error("deregister node member %v", err)
 		return
 	}
 	return
@@ -467,14 +466,14 @@ func (nd *NodeDiscovery) deregisterService() error {
 // OnEvent handles ZooKeeper session events.
 // It is responsible for triggering re-watch on reconnection and managing leadership state on disconnection.
 func (nd *NodeDiscovery) OnEvent(evt zk.Event) {
-	nd.Log("zookeeper event. type=%s state=%s path=%s", evt.Type.String(), evt.State.String(), evt.Path)
+	nd.Info("zookeeper event. type=%s state=%s path=%s", evt.Type.String(), evt.State.String(), evt.Path)
 	if evt.Type != zk.EventSession {
 		return
 	}
 	switch evt.State {
 	case zk.StateConnecting, zk.StateDisconnected, zk.StateExpired:
 		if nd.role == Leader {
-			nd.Log("role changed: from=%s  to=%s", Leader.String(), Follower.String())
+			nd.Info("role changed: from=%s  to=%s", Leader.String(), Follower.String())
 			nd.role = Follower
 			nd.roleChangedChan <- Follower
 		}
@@ -484,5 +483,23 @@ func (nd *NodeDiscovery) OnEvent(evt zk.Event) {
 		case nd.reWatch <- struct{}{}:
 		default:
 		}
+	}
+}
+
+func (nd *NodeDiscovery) Info(format string, args ...any) {
+	if node := nd.Node; node != nil {
+		node.Log().Info(`(registrar/nodes)`+format, args...)
+	}
+}
+
+func (nd *NodeDiscovery) Debug(format string, args ...any) {
+	if node := nd.Node; node != nil {
+		node.Log().Debug(`(registrar/nodes)`+format, args...)
+	}
+}
+
+func (nd *NodeDiscovery) Error(format string, args ...any) {
+	if node := nd.Node; node != nil {
+		node.Log().Error(`(registrar/nodes)`+format, args...)
 	}
 }
