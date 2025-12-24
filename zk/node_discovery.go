@@ -75,7 +75,7 @@ func (nd *NodeDiscovery) StartMember() error {
 		nd.Error("register service fail %v", err)
 		return err
 	}
-	nd.Info("starting node, register service: node=%s seq=%s", nd.self.Name, nd.self.Meta[metaKeySeq])
+	nd.Debug("starting node, register service: node=%s seq=%s", nd.self.Name, nd.self.Meta[metaKeySeq])
 
 	// Fetch the initial list of all nodes in the cluster.
 	nodes, version, err := nd.fetchNodes()
@@ -390,7 +390,7 @@ func (nd *NodeDiscovery) _keepWatching(stream <-chan zk.Event) error {
 	case <-nd.reWatch:
 		nd.Debug("zookeeper connection recoverd, check topo again.")
 	case <-nd.Shutdown.C():
-		nd.Info("shutdown...")
+		nd.Debug("shutdown...")
 		return ErrShutdown
 	}
 
@@ -436,9 +436,9 @@ func (nd *NodeDiscovery) containSelf(ns []*Node) bool {
 	}
 	if !bContainSelf {
 		if nd.self == nil {
-			nd.Info("I'm lost and self is blank")
+			nd.Debug("I'm lost and self is blank")
 		} else {
-			nd.Info("I'm lost node=%s seq=%d", nd.self.Name, nd.self.GetSeq())
+			nd.Debug("I'm lost node=%s seq=%d", nd.self.Name, nd.self.GetSeq())
 		}
 	}
 	return bContainSelf
@@ -466,7 +466,7 @@ func (nd *NodeDiscovery) deregisterService() error {
 // OnEvent handles ZooKeeper session events.
 // It is responsible for triggering re-watch on reconnection and managing leadership state on disconnection.
 func (nd *NodeDiscovery) OnEvent(evt zk.Event) {
-	nd.Info("zookeeper event. type=%s state=%s path=%s", evt.Type.String(), evt.State.String(), evt.Path)
+	nd.Debug("zookeeper event. type=%s state=%s path=%s", evt.Type.String(), evt.State.String(), evt.Path)
 	if evt.Type != zk.EventSession {
 		return
 	}

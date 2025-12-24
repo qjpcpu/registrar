@@ -210,7 +210,7 @@ func (ard *AppRouteDiscovery) removeDeprecatedAppRoute() error {
 		if err = ard.Conn.Delete(path, -1); err != nil {
 			ard.Error("fail to remove deprecated znode %s %v", path, err)
 		} else {
-			ard.Info("remove deprecated znode %s OK", path)
+			ard.Debug("remove deprecated znode %s OK", path)
 		}
 	}
 	return nil
@@ -357,7 +357,7 @@ func (ard *AppRouteDiscovery) addWatcher(ctx context.Context, clusterKey string)
 		return evtChan, nil
 	}
 
-	ard.Info("chilren changed, wait 1 sec and watch again old_cversion=%d new_cversion=%d", int(ard.revision), int(stat.Cversion))
+	ard.Debug("chilren changed, wait 1 sec and watch again old_cversion=%d new_cversion=%d", int(ard.revision), int(stat.Cversion))
 	time.Sleep(1 * time.Second)
 	nodes, version, err := ard.fetchNodes()
 	if err != nil {
@@ -390,7 +390,7 @@ func (ard *AppRouteDiscovery) _keepWatching(stream <-chan zk.Event) error {
 	case <-ard.myappsChanged:
 		ard.Debug("app routes changed, check topo again.")
 	case <-ard.Shutdown.C():
-		ard.Info("shutdown...")
+		ard.Debug("shutdown...")
 		return ErrShutdown
 	}
 
@@ -491,7 +491,7 @@ func (ard *AppRouteDiscovery) startEventNotifyLoop() {
 					if err := node.SendEvent(ard.Event.Load().Name, ard.EventRef.Load(), gen.MessageOptions{}, evt); err != nil {
 						ard.Error("failed to send %s %v", evt.String(), err)
 					} else {
-						ard.Info("send event %s OK", evt.String())
+						ard.Debug("send event %s OK", evt.String())
 					}
 				}
 			case <-ard.Shutdown.C():
