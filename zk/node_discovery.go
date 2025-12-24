@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ergo.services/ergo/gen"
@@ -38,6 +39,7 @@ type NodeDiscovery struct {
 	eventsCh        chan fmt.Stringer // A channel for sending node lifecycle events (joined/left).
 	started         bool
 	startMu         sync.Mutex
+	closeErrorLog   atomic.Bool
 }
 
 func (nd *NodeDiscovery) ResolveNodes() (nodes []gen.Atom) {
@@ -446,6 +448,7 @@ func (nd *NodeDiscovery) containSelf(ns []*Node) bool {
 
 // Stop gracefully shuts down the NodeDiscovery, deregistering the node from ZooKeeper.
 func (nd *NodeDiscovery) Stop() (err error) {
+	nd.closeErrorLog.Store(true)
 	nd.updateLeadership(nil)
 	err = nd.deregisterService()
 	if err != nil {
@@ -499,7 +502,7 @@ func (nd *NodeDiscovery) Debug(format string, args ...any) {
 }
 
 func (nd *NodeDiscovery) Error(format string, args ...any) {
-	if node := nd.Node; node != nil {
+	if node := nd.Node; node != nil && !nd.closeErrorLog.Load() {
 		node.Log().Error(`(registrar/nodes)`+format, args...)
 	}
 }

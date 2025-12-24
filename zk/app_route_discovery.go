@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ergo.services/ergo/gen"
@@ -36,6 +37,7 @@ type AppRouteDiscovery struct {
 	eventsCh      chan fmt.Stringer          // A channel for sending application lifecycle events.
 	started       bool
 	startMu       sync.Mutex
+	closeErrorLog atomic.Bool
 }
 
 // ResolveApp returns all known routes for a given application name from the local cache.
@@ -447,6 +449,7 @@ func (ard *AppRouteDiscovery) containSelf(ns []*AppRouteNode) bool {
 
 // Stop gracefully shuts down the discovery service, deregistering all its application routes.
 func (ard *AppRouteDiscovery) Stop() (err error) {
+	ard.closeErrorLog.Store(true)
 	err = ard.deregisterService()
 	if err != nil {
 		ard.Error("deregister app routes fail %v", err)
@@ -514,7 +517,7 @@ func (ard *AppRouteDiscovery) Debug(format string, args ...any) {
 }
 
 func (ard *AppRouteDiscovery) Error(format string, args ...any) {
-	if node := ard.Node; node != nil {
+	if node := ard.Node; node != nil && !ard.closeErrorLog.Load() {
 		node.Log().Error(`(registrar/apps)`+format, args...)
 	}
 }
