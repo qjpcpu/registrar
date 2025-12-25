@@ -59,6 +59,7 @@ func newClient(options *Options) *client {
 		roleChangedChan: make(chan RoleType, 1),
 		reWatch:         make(chan struct{}, 1),
 		eventsCh:        make(chan fmt.Stringer, 8),
+		leaderNode:      NewAtomicValue[gen.Atom](),
 	}
 	appDisc := &AppRouteDiscovery{
 		RootZnode: buildZnode(ZkRoot, options.Cluster, "apps"),

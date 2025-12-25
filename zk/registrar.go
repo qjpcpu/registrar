@@ -5,8 +5,9 @@ import (
 )
 
 const (
-	RegistrarVersion = "R1"
-	RegistrarName    = "ZK Client"
+	RegistrarVersion     = "R1"
+	RegistrarName        = "ZK Client"
+	LeaderNodeConfigItem = "Leader"
 )
 
 // gen.Registrar interface implementation
@@ -60,6 +61,9 @@ func (c *client) Nodes() ([]gen.Atom, error) {
 }
 
 func (c *client) ConfigItem(item string) (any, error) {
+	if item == LeaderNodeConfigItem {
+		return c.nodeDisc.GetLeader(), nil
+	}
 	return nil, gen.ErrUnsupported
 }
 

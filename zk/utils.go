@@ -119,7 +119,3 @@ func buildRoleEvent(role RoleType, node gen.Atom) fmt.Stringer {
 	}
 	return EventNodeSwitchedToFollower{Name: node}
 }
-
-func buildRoleHeartbeatEvent(role RoleType, node gen.Atom) fmt.Stringer {
-	return EventNodeRoleHeartbeat{Name: node, Role: role}
-}

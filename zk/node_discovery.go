@@ -40,6 +40,7 @@ type NodeDiscovery struct {
 	started         bool
 	startMu         sync.Mutex
 	closeErrorLog   atomic.Bool
+	leaderNode      *AtomicValue[gen.Atom]
 }
 
 func (nd *NodeDiscovery) ResolveNodes() (nodes []gen.Atom) {
@@ -120,6 +121,10 @@ func (nd *NodeDiscovery) init(routes []gen.Route) error {
 	return nil
 }
 
+func (nd *NodeDiscovery) GetLeader() gen.Atom {
+	return nd.leaderNode.Load()
+}
+
 func (nd *NodeDiscovery) startEventNotifyLoop() {
 	sendEvent := func(evt fmt.Stringer) {
 		if node := nd.Node; node != nil {
@@ -131,17 +136,11 @@ func (nd *NodeDiscovery) startEventNotifyLoop() {
 		}
 	}
 	go func() {
-		ticker := time.NewTicker(time.Minute * 5)
-		defer ticker.Stop()
 		for {
 			select {
 			case role := <-nd.roleChangedChan:
 				if node := nd.Node; node != nil {
 					sendEvent(buildRoleEvent(role, node.Name()))
-				}
-			case <-ticker.C:
-				if node := nd.Node; node != nil {
-					sendEvent(buildRoleHeartbeatEvent(nd.role, node.Name()))
 				}
 			case evt := <-nd.eventsCh:
 				sendEvent(evt)
@@ -273,6 +272,7 @@ func (nd *NodeDiscovery) updateLeadership(ns []*Node) {
 	if nd.isLeaderOf(ns) {
 		role = Leader
 	}
+	nd.leaderNode.Store(nd.chooseLeaderFrom(ns))
 	if role != nd.role {
 		nd.Info("role changed from=%s to=%s", nd.role.String(), role.String())
 		nd.role = role
@@ -311,6 +311,18 @@ func (nd *NodeDiscovery) isLeaderOf(ns []*Node) bool {
 		nd.Debug("I'm follower, self node info is blank")
 	}
 	return false
+}
+
+func (nd *NodeDiscovery) chooseLeaderFrom(ns []*Node) gen.Atom {
+	var minSeq = -1
+	var leader gen.Atom
+	for _, node := range ns {
+		if seq := node.GetSeq(); seq < minSeq || minSeq == -1 {
+			leader = node.Name
+			minSeq = seq
+		}
+	}
+	return leader
 }
 
 // startWatching starts a background goroutine that continuously watches for changes
