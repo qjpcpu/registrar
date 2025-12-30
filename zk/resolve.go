@@ -19,7 +19,7 @@ func (c *client) Resolve(name gen.Atom) ([]gen.Route, error) {
 	return value.(*Node).Routes, nil
 }
 
-// ResolveApplication returns all known routes for a given application name, excluding the routes on the node itself.
+// ResolveApplication returns all known routes for a given application name
 func (c *client) ResolveApplication(name gen.Atom) ([]gen.ApplicationRoute, error) {
 	routes := c.appDisc.ResolveApp(name)
 	if len(routes) > 0 {
