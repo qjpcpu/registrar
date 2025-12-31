@@ -9,9 +9,6 @@ import (
 //
 
 func (c *client) Resolve(name gen.Atom) ([]gen.Route, error) {
-	if node := c.nodeDisc.Node; node != nil && name == node.Name() {
-		return c.nodeDisc.Routes.Load(), nil
-	}
 	value, ok := c.nodeDisc.Members.Load(name)
 	if !ok {
 		return nil, gen.ErrNoRoute
