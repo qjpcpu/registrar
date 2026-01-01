@@ -66,9 +66,10 @@ func startNode(t *testing.T, result *Result, nodeName, role string) gen.Node {
 	eds, err := getTestEndpoints()
 	mustSuccess(t, err)
 	registrar, err := Create(Options{
-		Endpoints: eds,
-		Cluster:   "basic_test",
-		ZkOptions: []zk.ConnOption{zk.WithLogger(nozklog{})},
+		Endpoints:                  eds,
+		Cluster:                    "basic_test",
+		ZkOptions:                  []zk.ConnOption{zk.WithLogger(nozklog{})},
+		SupportRegisterApplication: true,
 	})
 	mustSuccess(t, err)
 	options.Network.Registrar = registrar
