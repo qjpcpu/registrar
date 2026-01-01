@@ -28,6 +28,9 @@ type Options struct {
 
 	// ZkOptions allows passing native go-zk library connection options for advanced configuration.
 	ZkOptions []zk.ConnOption
+
+	// SupportRegisterApplication enables the registration of application routes for this node.
+	SupportRegisterApplication bool
 }
 
 // MapRoutesByAdvertiseAddress sets the advertised IP address and port for the node.

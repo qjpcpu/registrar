@@ -473,6 +473,9 @@ func (ard *AppRouteDiscovery) deregisterService() error {
 // OnEvent handles ZooKeeper session events.
 // It is responsible for triggering a re-watch when a session is re-established.
 func (ard *AppRouteDiscovery) OnEvent(evt zk.Event) {
+	if !ard.started {
+		return
+	}
 	if evt.Type != zk.EventSession {
 		return
 	}

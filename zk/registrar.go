@@ -29,10 +29,12 @@ func (c *client) Register(node gen.NodeRegistrar, routes gen.RegisterRoutes) (ge
 	if err := c.nodeDisc.StartMember(); err != nil {
 		return gen.StaticRoutes{}, err
 	}
-	if err := c.appDisc.StartMember(); err != nil {
-		return gen.StaticRoutes{}, err
+	if c.options.SupportRegisterApplication {
+		if err := c.appDisc.StartMember(); err != nil {
+			return gen.StaticRoutes{}, err
+		}
+		c.appDisc.RegisterApplicationRoutes(routes.ApplicationRoutes...)
 	}
-	c.appDisc.RegisterApplicationRoutes(routes.ApplicationRoutes...)
 	return gen.StaticRoutes{}, nil
 }
 
@@ -48,10 +50,16 @@ func (c *client) UnregisterProxy(to gen.Atom) error {
 }
 
 func (c *client) RegisterApplicationRoute(route gen.ApplicationRoute) error {
+	if !c.options.SupportRegisterApplication {
+		return gen.ErrUnsupported
+	}
 	return c.appDisc.RegisterApplicationRoutes(route)
 }
 
 func (c *client) UnregisterApplicationRoute(name gen.Atom) error {
+	if !c.options.SupportRegisterApplication {
+		return gen.ErrUnsupported
+	}
 	return c.appDisc.UnregisterApplicationRoute(name)
 }
 
@@ -82,7 +90,7 @@ func (c *client) Info() gen.RegistrarInfo {
 		SupportConfig:              false,
 		SupportEvent:               true,
 		SupportRegisterProxy:       false,
-		SupportRegisterApplication: true,
+		SupportRegisterApplication: c.options.SupportRegisterApplication,
 	}
 }
 

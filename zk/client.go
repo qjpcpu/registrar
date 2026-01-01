@@ -16,6 +16,7 @@ var (
 const ZkRoot = `/services/ergo`
 
 type client struct {
+	options  Options
 	nodeDisc *NodeDiscovery
 	appDisc  *AppRouteDiscovery
 	shutdown *CloseChan
@@ -31,6 +32,7 @@ func Create(options Options) (gen.Registrar, error) {
 	p.nodeDisc.Conn = conn
 	p.appDisc.Conn = conn
 	p.conn = conn
+	p.options = options
 
 	return p, nil
 }
@@ -102,9 +104,11 @@ func (c *client) Shutdown() (err error) {
 		if err0 != nil {
 			err = err0
 		}
-		err0 = c.appDisc.Stop()
-		if err0 != nil {
-			err = err0
+		if c.options.SupportRegisterApplication {
+			err0 = c.appDisc.Stop()
+			if err0 != nil {
+				err = err0
+			}
 		}
 		c.conn.Close()
 	})
