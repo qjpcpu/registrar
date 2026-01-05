@@ -125,6 +125,13 @@ func (nd *NodeDiscovery) GetLeader() gen.Atom {
 	return nd.leaderNode.Load()
 }
 
+func (nd *NodeDiscovery) GetNodeVersion(node gen.Atom) int {
+	if val, ok := nd.Members.Load(node); ok {
+		return val.(*Node).GetSeq()
+	}
+	return -1
+}
+
 func (nd *NodeDiscovery) startEventNotifyLoop() {
 	sendEvent := func(evt fmt.Stringer) {
 		if node := nd.Node; node != nil {

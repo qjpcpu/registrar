@@ -72,7 +72,7 @@ func (c *client) ConfigItem(item string) (any, error) {
 	if item == LeaderNodeConfigItem {
 		return c.nodeDisc.GetLeader(), nil
 	}
-	return nil, gen.ErrUnsupported
+	return c.nodeDisc.GetNodeVersion(gen.Atom(item)), nil
 }
 
 func (c *client) Config(items ...string) (map[string]any, error) {
