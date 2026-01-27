@@ -13,7 +13,7 @@ var (
 	ErrShutdown = errors.New("registrar shutdown")
 )
 
-const ZkRoot = `/services/ergo`
+const ZkRoot = `/ergo`
 
 type client struct {
 	options  Options
