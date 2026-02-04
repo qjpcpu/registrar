@@ -1,7 +1,6 @@
 package zk
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -263,83 +262,6 @@ func TestNodesExcludeSelf(t *testing.T) {
 
 	mustTrue(t, len(nodes2) == 1, "node2 should see 1 other node")
 	mustTrue(t, nodes2[0] == node1.Name(), "node2 should see node1")
-}
-
-func startNodeWithRoutesMapper(t *testing.T, result *Result, nodeName, role, cluster string, mapper RoutesMapper) gen.Node {
-	var options gen.NodeOptions
-	eds, err := getTestEndpoints()
-	mustSuccess(t, err)
-	registrar, err := Create(Options{
-		Endpoints:    eds,
-		Cluster:      cluster,
-		ZkOptions:    []zk.ConnOption{zk.WithLogger(nozklog{})},
-		RoutesMapper: mapper,
-	})
-	mustSuccess(t, err)
-	options.Network.Registrar = registrar
-	options.Network.Acceptors = []gen.AcceptorOptions{{Host: "0.0.0.0", TCP: "tcp"}}
-	options.Network.Cookie = "test-cookie-123"
-	apps := []gen.ApplicationBehavior{
-		CreateApp(role, result),
-	}
-	options.Applications = apps
-	options.Log.DefaultLogger.Disable = true
-
-	node, err := ergo.StartNode(gen.Atom(nodeName), options)
-	mustSuccess(t, err)
-	return node
-}
-
-func TestRoutesMapper(t *testing.T) {
-	const mappedHost = "127.0.0.1"
-	const nodeName = "node1@localhost"
-	const cluster = "routes_mapper_test"
-
-	result := NewResult()
-	mapper := func(routes []gen.Route) []gen.Route {
-		for i := range routes {
-			routes[i].Host = mappedHost
-		}
-		return routes
-	}
-	// use a different cluster name to avoid conflict
-	node := startNodeWithRoutesMapper(t, result, nodeName, "consumer", cluster, mapper)
-	defer node.StopForce() // this will trigger cleanup of ephemeral nodes
-
-	eds, err := getTestEndpoints()
-	mustSuccess(t, err)
-	conn, _, err := zk.Connect(eds, 5*time.Second, zk.WithLogger(nozklog{}))
-	mustSuccess(t, err)
-	defer conn.Close()
-
-	basePath := buildZnode(ZkRoot, cluster, "nodes")
-
-	var nodePath string
-	var data []byte
-	var children []string
-	// retry for 5 seconds
-	for i := 0; i < 50; i++ {
-		children, _, _ = conn.Children(basePath)
-		if len(children) > 0 {
-			nodePath = buildZnode(basePath, children[0])
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	if nodePath == "" {
-		t.Fatal("znode was not created in time at path: ", basePath)
-	}
-
-	data, _, err = conn.Get(nodePath)
-	mustSuccess(t, err)
-
-	var registeredNode Node
-	err = json.Unmarshal(data, &registeredNode)
-	mustSuccess(t, err)
-
-	mustTrue(t, len(registeredNode.Routes) > 0, "no routes found in registered node")
-	mustTrue(t, registeredNode.Routes[0].Host == mappedHost, "host address was not mapped")
 }
 
 func startNodeWithCluster(t *testing.T, result *Result, nodeName, role, cluster string) gen.Node {

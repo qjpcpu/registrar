@@ -15,7 +15,6 @@ It enables Ergo nodes to form a cluster without a single point of failure, ensur
 - **Automatic Cleanup**: Ephemeral znodes ensure that disconnected or failed nodes are automatically removed from the cluster.
 - **Security**: Supports ZooKeeper ACLs for secure access control.
 - **High Availability**: Built on ZooKeeper's battle-tested distributed consensus algorithm.
-- **Customizable Routes**: Supports advertising a different address for nodes, essential for NAT or containerized environments.
 - **Cluster Namespace**: Allows multiple Ergo clusters to share the same ZooKeeper ensemble by using a `Cluster` name.
 
 ## Quick Start
@@ -42,18 +41,6 @@ node, err := ergo.StartNode("demo@localhost", options)
 ```
 
 ## Advanced Usage
-
-### NAT and Containerized Environments
-
-When running nodes behind a NAT or in containers (like Docker or Kubernetes), you often need to advertise a public or reachable IP address. Use a `RoutesMapper` to modify the route information before it's published to ZooKeeper.
-
-```go
-// Advertise a specific IP and port
-registrar, err := zk.Create(zk.Options{
-    Endpoints: []string{"localhost:2181"},
-    RoutesMapper: zk.MapRoutesByAdvertiseAddress("8.8.8.8", 8080),
-})
-```
 
 ### Leader Election and Role-Based Actors
 

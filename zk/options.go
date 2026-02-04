@@ -3,7 +3,6 @@ package zk
 import (
 	"time"
 
-	"ergo.services/ergo/gen"
 	"github.com/qjpcpu/zk"
 )
 
@@ -21,34 +20,11 @@ type Options struct {
 	// Auth provides authentication credentials for accessing ZooKeeper.
 	Auth AuthConfig
 
-	// RoutesMapper is a function to modify the node's route information before it is published.
-	// This is useful for handling NAT traversal or specifying a broadcast address in containerized
-	// environments (e.g., Docker, Kubernetes).
-	RoutesMapper RoutesMapper
-
 	// ZkOptions allows passing native go-zk library connection options for advanced configuration.
 	ZkOptions []zk.ConnOption
 
 	// SupportRegisterApplication enables the registration of application routes for this node.
 	SupportRegisterApplication bool
-}
-
-// MapRoutesByAdvertiseAddress sets the advertised IP address and port for the node.
-func MapRoutesByAdvertiseAddress(ip string, port int) RoutesMapper {
-	return RoutesMapper(func(routes []gen.Route) []gen.Route {
-		if len(routes) == 0 {
-			return routes
-		}
-		return []gen.Route{
-			{
-				Host:             ip,
-				Port:             uint16(port),
-				TLS:              routes[0].TLS,
-				HandshakeVersion: routes[0].HandshakeVersion,
-				ProtoVersion:     routes[0].ProtoVersion,
-			},
-		}
-	})
 }
 
 type AuthConfig struct {
@@ -71,8 +47,6 @@ func (o Options) getZKOptions(nd *NodeDiscovery, opts ...zk.ConnOption) []zk.Con
 	}
 	return append(options, opts...)
 }
-
-type RoutesMapper func([]gen.Route) []gen.Route
 
 type RoleType int
 

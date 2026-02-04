@@ -21,10 +21,9 @@ type NodeDiscovery struct {
 	Node gen.NodeRegistrar
 
 	/* options */
-	RootZnode         string
-	Routes, AdvRoutes *AtomicValue[[]gen.Route]
-	RoutesMapper      RoutesMapper
-	Shutdown          *CloseChan
+	RootZnode string
+	Routes    *AtomicValue[[]gen.Route]
+	Shutdown  *CloseChan
 	Event             *AtomicValue[gen.Event]
 	EventRef          *AtomicValue[gen.Ref]
 
@@ -66,7 +65,7 @@ func (nd *NodeDiscovery) StartMember() error {
 	}
 
 	// Initialize self node data.
-	if err := nd.init(nd.AdvRoutes.Load()); err != nil {
+	if err := nd.init(nd.Routes.Load()); err != nil {
 		return err
 	}
 
@@ -97,16 +96,8 @@ func (nd *NodeDiscovery) StartMember() error {
 }
 
 // RegisterRoutes updates the routes for the current node.
-// It also applies any configured route mapping.
 func (nd *NodeDiscovery) RegisterRoutes(routes []gen.Route) []gen.Route {
 	nd.Routes.Store(routes)
-	return nd.AdvRoutes.Store(nd.mapRoutes(routes))
-}
-
-func (nd *NodeDiscovery) mapRoutes(routes []gen.Route) []gen.Route {
-	if mapfn := nd.RoutesMapper; mapfn != nil {
-		return mapfn(routes)
-	}
 	return routes
 }
 
