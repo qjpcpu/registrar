@@ -1,6 +1,6 @@
 # ZooKeeper Registrar for Ergo Framework
 
-[![GoDoc](https://godoc.org/ergo.services/registrar/zk?status.svg)](https://godoc.org/ergo.services/registrar/zk)
+[![GoDoc](https://godoc.org/github.com/qjpcpu/registrar/zk?status.svg)](https://godoc.org/github.com/qjpcpu/registrar/zk)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 This package provides a `gen.Registrar` implementation for the [Ergo Framework](https://ergo.services/), leveraging [Apache ZooKeeper](https://zookeeper.apache.org/) for distributed service discovery, leader election, and real-time cluster eventing.
@@ -23,7 +23,7 @@ It enables Ergo nodes to form a cluster without a single point of failure, ensur
 To get started, create a ZooKeeper registrar instance and assign it to your node options.
 
 ```go
-import "ergo.services/registrar/zk"
+import "github.com/qjpcpu/registrar/zk"
 
 // Connect to a ZooKeeper ensemble
 registrar, err := zk.Create(zk.Options{
@@ -64,7 +64,7 @@ The registrar broadcasts `zk.EventNodeSwitchedToLeader` and `zk.EventNodeSwitche
 ```go
 import (
     "ergo.services/ergo/gen"
-    "ergo.services/registrar/zk"
+    "github.com/qjpcpu/registrar/zk"
 )
 
 type myActor struct {
