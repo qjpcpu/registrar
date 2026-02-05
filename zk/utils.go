@@ -1,13 +1,14 @@
 package zk
 
 import (
-	"ergo.services/ergo/gen"
 	"fmt"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
+
+	"ergo.services/ergo/gen"
+	"github.com/qjpcpu/registrar/events"
 
 	"strconv"
 	"strings"
@@ -37,12 +38,6 @@ func stringContains(list []string, str string) bool {
 		}
 	}
 	return false
-}
-
-func getRuntimeStack() []byte {
-	const size = 64 << 10
-	buf := make([]byte, size)
-	return buf[:runtime.Stack(buf, false)]
 }
 
 type CloseChan struct {
@@ -115,7 +110,7 @@ func buildZnode(names ...string) string {
 
 func buildRoleEvent(role RoleType, node gen.Atom) fmt.Stringer {
 	if role == Leader {
-		return EventNodeSwitchedToLeader{Name: node}
+		return events.EventNodeSwitchedToLeader{Name: node}
 	}
-	return EventNodeSwitchedToFollower{Name: node}
+	return events.EventNodeSwitchedToFollower{Name: node}
 }

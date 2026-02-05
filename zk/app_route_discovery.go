@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ergo.services/ergo/gen"
+	"github.com/qjpcpu/registrar/events"
 	"github.com/qjpcpu/zk"
 )
 
@@ -285,11 +286,11 @@ func (ard *AppRouteDiscovery) updateNodes(members []*AppRouteNode, reversion int
 	publish := func(route gen.ApplicationRoute) {
 		switch route.State {
 		case gen.ApplicationStateLoaded:
-			ard.eventsCh <- EventApplicationLoaded{Name: route.Name, Node: route.Node, Weight: route.Weight}
+			ard.eventsCh <- events.EventApplicationLoaded{Name: route.Name, Node: route.Node, Weight: route.Weight}
 		case gen.ApplicationStateRunning:
-			ard.eventsCh <- EventApplicationStarted{Name: route.Name, Node: route.Node, Weight: route.Weight, Mode: route.Mode}
+			ard.eventsCh <- events.EventApplicationStarted{Name: route.Name, Node: route.Node, Weight: route.Weight, Mode: route.Mode}
 		case gen.ApplicationStateStopping:
-			ard.eventsCh <- EventApplicationStopping{Name: route.Name, Node: route.Node}
+			ard.eventsCh <- events.EventApplicationStopping{Name: route.Name, Node: route.Node}
 		}
 	}
 	oldMembers := ard.allAppRoutes.Load()
@@ -307,7 +308,7 @@ func (ard *AppRouteDiscovery) updateNodes(members []*AppRouteNode, reversion int
 	newMembers := newMembersBuilder.Build()
 	oldMembers.Range(func(app gen.Atom, node gen.Atom, route gen.ApplicationRoute) bool {
 		if _, ok := newMembers.GetRoute(app, node); !ok {
-			ard.eventsCh <- EventApplicationStopped{Name: app, Node: node}
+			ard.eventsCh <- events.EventApplicationStopped{Name: app, Node: node}
 		}
 		return true
 	})

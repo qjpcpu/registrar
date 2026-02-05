@@ -2,12 +2,12 @@ package zk
 
 import (
 	"ergo.services/ergo/gen"
+	"github.com/qjpcpu/registrar/constants"
 )
 
 const (
-	RegistrarVersion     = "R1"
-	RegistrarName        = "ZK Client"
-	LeaderNodeConfigItem = "Leader"
+	RegistrarVersion = "R1"
+	RegistrarName    = "ZK Client"
 )
 
 // gen.Registrar interface implementation
@@ -69,10 +69,10 @@ func (c *client) Nodes() ([]gen.Atom, error) {
 }
 
 func (c *client) ConfigItem(item string) (any, error) {
-	if item == LeaderNodeConfigItem {
+	if item == constants.LeaderNodeConfigItem {
 		return c.nodeDisc.GetLeader(), nil
 	}
-	return c.nodeDisc.GetNodeVersion(gen.Atom(item)), nil
+	return nil, nil
 }
 
 func (c *client) Config(items ...string) (map[string]any, error) {

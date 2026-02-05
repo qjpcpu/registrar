@@ -1,16 +1,10 @@
-package zk
+package events
 
 import (
 	"fmt"
 
 	"ergo.services/ergo/gen"
 )
-
-// Configuration update events
-type EventConfigUpdate struct {
-	Item  string
-	Value any
-}
 
 // Node lifecycle events
 type EventNodeJoined struct {

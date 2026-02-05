@@ -11,6 +11,7 @@ import (
 	"ergo.services/ergo"
 	"ergo.services/ergo/act"
 	"ergo.services/ergo/gen"
+	"github.com/qjpcpu/registrar/events"
 	"github.com/qjpcpu/zk"
 )
 
@@ -224,8 +225,8 @@ func (a *myActor) setupRegistrarMonitoring() error {
 
 func (a *myActor) HandleEvent(event gen.MessageEvent) error {
 	switch event.Message.(type) {
-	case EventNodeLeft:
-	case EventNodeJoined:
+	case events.EventNodeLeft:
+	case events.EventNodeJoined:
 		a.result.recvNodeJoinEventSuccess.Store(true)
 		a.result.Check()
 	}

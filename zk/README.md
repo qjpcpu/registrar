@@ -46,11 +46,12 @@ node, err := ergo.StartNode("demo@localhost", options)
 
 The registrar automatically performs leader election. You can listen for role changes to create actors that run only on the leader node. This is useful for singleton services or cluster-wide management tasks.
 
-The registrar broadcasts `zk.EventNodeSwitchedToLeader` and `zk.EventNodeSwitchedToFollower` events to the Ergo node's event bus. You can subscribe to these events to manage leader-specific actors.
+The registrar broadcasts `events.EventNodeSwitchedToLeader` and `events.EventNodeSwitchedToFollower` events to the Ergo node's event bus. You can subscribe to these events to manage leader-specific actors.
 
 ```go
 import (
     "ergo.services/ergo/gen"
+    "github.com/qjpcpu/registrar/events"
     "github.com/qjpcpu/registrar/zk"
 )
 
@@ -58,27 +59,26 @@ type myActor struct {
     act.Actor
 }
 
-func (a *myActor) Init(pid gen.PID, args ...any) (gen.ActorState, error) {
+func (a *myActor) Init(args ...any) error {
     // ... initialize leader-specific state ...
-    return nil, nil
+    return nil
 }
 
 // ... in your application setup ...
 
-    // Subscribe to leader change events
-    MonitorNodeEvents(
-        zk.EventNodeSwitchedToLeader{},
-        zk.EventNodeSwitchedToFollower{},
-    )
+    // Subscribe to events from registrar
+    reg, _ := node.Network().Registrar()
+    event, _ := reg.Event()
+    node.MonitorEvent(event)
 
 func (a *myActor) HandleEvent(event gen.MessageEvent) error {
         // Receive events from the node's event bus
-        switch event.(type) {
-        case zk.EventNodeSwitchedToLeader:
+        switch event.Message.(type) {
+        case events.EventNodeSwitchedToLeader:
             // We are the new leader, spawn the leader-specific actor
             leaderPID, _ = node.Spawn(&MyLeaderActor{}, gen.ProcessOptions{})
 
-        case zk.EventNodeSwitchedToFollower:
+        case events.EventNodeSwitchedToFollower:
             // We are now a follower, stop the actor if it's running
             node.Kill(leaderPID)
         }
@@ -106,16 +106,14 @@ registrar, err := zk.Create(zk.Options{
 
 ### Custom Logging
 
-By default, the registrar is silent. You can provide a custom logging function to integrate with your application's logging infrastructure.
+By default, the registrar logs to the Ergo node's logger. If you want to provide custom logging for the underlying ZooKeeper client, you can use `ZkOptions`.
 
 ```go
-logFn := func(format string, v ...any) {
-    log.Printf("[ZK-REGISTRAR] " + format, v...)
-}
+import "github.com/qjpcpu/zk"
 
 registrar, err := zk.Create(zk.Options{
     Endpoints: []string{"localhost:2181"},
-    LogFn:     logFn,
+    ZkOptions: []zk.ConnOption{zk.WithLogger(myCustomLogger)},
 })
 ```
 
@@ -125,8 +123,8 @@ This registrar uses ZooKeeper's core features to manage an Ergo cluster.
 
 ### Path Structure
 
-- **Nodes**: `/services/ergo/{cluster}/nodes/{node-sequential}`
-- **Applications**: `/services/ergo/{cluster}/apps/{app}/{node-sequential}`
+- **Nodes**: `/ergo/{cluster}/nodes/{node-sequential}`
+- **Applications**: `/ergo/{cluster}/apps/{app}/{node-sequential}`
 
 The `{cluster}` segment is configurable via `zk.Options` and defaults to `"default"`.
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"ergo.services/ergo/gen"
+	"github.com/qjpcpu/registrar/events"
 	"github.com/qjpcpu/zk"
 )
 
@@ -24,8 +25,8 @@ type NodeDiscovery struct {
 	RootZnode string
 	Routes    *AtomicValue[[]gen.Route]
 	Shutdown  *CloseChan
-	Event             *AtomicValue[gen.Event]
-	EventRef          *AtomicValue[gen.Ref]
+	Event     *AtomicValue[gen.Event]
+	EventRef  *AtomicValue[gen.Ref]
 
 	/* state fields */
 	self            *Node             // Represents the current node's information.
@@ -246,7 +247,7 @@ func (nd *NodeDiscovery) updateNodes(members []*Node, reversion int32) {
 	for i, n := range members {
 		newMembers[n.Name] = members[i]
 		if _, ok := nd.Members.Load(n.Name); !ok && n.Name != nd.Node.Name() {
-			nd.eventsCh <- EventNodeJoined{Name: n.Name}
+			nd.eventsCh <- events.EventNodeJoined{Name: n.Name}
 		}
 		nd.Members.Store(n.Name, n)
 	}
@@ -254,7 +255,7 @@ func (nd *NodeDiscovery) updateNodes(members []*Node, reversion int32) {
 		name := key.(gen.Atom)
 		if _, ok := newMembers[name]; !ok {
 			if name != nd.Node.Name() {
-				nd.eventsCh <- EventNodeLeft{Name: name}
+				nd.eventsCh <- events.EventNodeLeft{Name: name}
 			}
 			nd.Members.Delete(name)
 		}
