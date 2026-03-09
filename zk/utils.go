@@ -2,8 +2,7 @@ package zk
 
 import (
 	"fmt"
-	"path/filepath"
-	"sort"
+	"path"
 	"sync"
 	"sync/atomic"
 
@@ -74,8 +73,13 @@ func (s sequences) Min() int {
 	if len(s) == 0 {
 		return -1
 	}
-	sort.Ints(s)
-	return s[0]
+	m := s[0]
+	for _, v := range s[1:] {
+		if v < m {
+			m = v
+		}
+	}
+	return m
 }
 
 func (s sequences) Add(v int) sequences {
@@ -105,7 +109,7 @@ func (fn LogFn) Printf(f string, args ...any) {
 }
 
 func buildZnode(names ...string) string {
-	return filepath.Join(names...)
+	return path.Join(names...)
 }
 
 func buildRoleEvent(role RoleType, node gen.Atom) fmt.Stringer {

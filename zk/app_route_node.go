@@ -12,9 +12,9 @@ import (
 type AppRouteNode struct {
 	Name   gen.Atom `json:"app"`
 	Node   gen.Atom `json:"node"`
-	Weight int
-	Mode   int
-	State  int32
+	Weight int      `json:"weight"`
+	Mode   int      `json:"mode"`
+	State  int32    `json:"state"`
 	Meta   sync.Map `json:"-"`
 }
 

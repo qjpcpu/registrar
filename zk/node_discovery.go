@@ -3,7 +3,7 @@ package zk
 import (
 	"context"
 	"fmt"
-	"path/filepath"
+	"path"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -188,9 +188,12 @@ func (nd *NodeDiscovery) fetchNodes() ([]*Node, int32, error) {
 
 	var nodes []*Node
 	for _, short := range children {
-		long := filepath.Join(key, short)
+		long := path.Join(key, short)
 		value, _, err := nd.Conn.Get(long)
 		if err != nil {
+			if err == zk.ErrNoNode {
+				continue
+			}
 			nd.Error("fetch nodes fail. path=%s %v", long, err)
 			return nil, stat.Cversion, err
 		}
@@ -247,7 +250,11 @@ func (nd *NodeDiscovery) updateNodes(members []*Node, reversion int32) {
 	for i, n := range members {
 		newMembers[n.Name] = members[i]
 		if _, ok := nd.Members.Load(n.Name); !ok && n.Name != nd.Node.Name() {
-			nd.eventsCh <- events.EventNodeJoined{Name: n.Name}
+			select {
+			case nd.eventsCh <- events.EventNodeJoined{Name: n.Name}:
+			default:
+				nd.Error("event channel full, dropping EventNodeJoined for %s", n.Name)
+			}
 		}
 		nd.Members.Store(n.Name, n)
 	}
@@ -255,7 +262,11 @@ func (nd *NodeDiscovery) updateNodes(members []*Node, reversion int32) {
 		name := key.(gen.Atom)
 		if _, ok := newMembers[name]; !ok {
 			if name != nd.Node.Name() {
-				nd.eventsCh <- events.EventNodeLeft{Name: name}
+				select {
+				case nd.eventsCh <- events.EventNodeLeft{Name: name}:
+				default:
+					nd.Error("event channel full, dropping EventNodeLeft for %s", name)
+				}
 			}
 			nd.Members.Delete(name)
 		}
@@ -358,31 +369,32 @@ func (nd *NodeDiscovery) keepWatching(ctx context.Context) error {
 // If they have, it fetches the new list, updates the node state, and re-establishes the watch.
 // This handles the case where changes happen between a watch event and setting a new watch.
 func (nd *NodeDiscovery) addWatcher(ctx context.Context, clusterKey string) (<-chan zk.Event, error) {
-	_, stat, evtChan, err := nd.Conn.ChildrenW(clusterKey)
-	if err != nil {
-		return nil, err
-	}
-
-	nd.Debug("watching path=%s children=%d cversion=%d", clusterKey, int(stat.NumChildren), stat.Cversion)
-	if !nd.isChildrenChanged(stat) {
-		return evtChan, nil
-	}
-
-	nd.Debug("chilren changed, wait 1 sec and watch again old_cversion=%d new_cversion=%d", int(nd.revision), int(stat.Cversion))
-	time.Sleep(1 * time.Second)
-	nodes, version, err := nd.fetchNodes()
-	if err != nil {
-		return nil, err
-	}
-	if !nd.containSelf(nodes) {
-		if err = nd.registerService(); err != nil {
+	for {
+		_, stat, evtChan, err := nd.Conn.ChildrenW(clusterKey)
+		if err != nil {
 			return nil, err
 		}
+
+		nd.Debug("watching path=%s children=%d cversion=%d", clusterKey, int(stat.NumChildren), stat.Cversion)
+		if !nd.isChildrenChanged(stat) {
+			return evtChan, nil
+		}
+
+		nd.Debug("chilren changed, wait 1 sec and watch again old_cversion=%d new_cversion=%d", int(nd.revision), int(stat.Cversion))
+		time.Sleep(1 * time.Second)
+		nodes, version, err := nd.fetchNodes()
+		if err != nil {
+			return nil, err
+		}
+		if !nd.containSelf(nodes) {
+			if err = nd.registerService(); err != nil {
+				return nil, err
+			}
+		}
+		// initialize members
+		nd.updateNodes(nodes, version)
+		nd.updateLeadership(nodes)
 	}
-	// initialize members
-	nd.updateNodes(nodes, version)
-	nd.updateLeadership(nodes)
-	return nd.addWatcher(ctx, clusterKey)
 }
 
 // _keepWatching blocks on various channels:
@@ -394,9 +406,11 @@ func (nd *NodeDiscovery) _keepWatching(stream <-chan zk.Event) error {
 	case event := <-stream:
 		if err := event.Err; err != nil {
 			nd.Error("failure watching service. %v", err)
-			if childrenNotContains(nd.Conn, nd.RootZnode, filepath.Base(nd.fullpath)) {
+			if childrenNotContains(nd.Conn, nd.RootZnode, path.Base(nd.fullpath)) {
 				nd.Debug("node register info lost, register self again")
-				nd.registerService()
+				if regErr := nd.registerService(); regErr != nil {
+					nd.Error("re-register service fail %v", regErr)
+				}
 			}
 			return err
 		}
@@ -481,6 +495,9 @@ func (nd *NodeDiscovery) deregisterService() error {
 // It is responsible for triggering re-watch on reconnection and managing leadership state on disconnection.
 func (nd *NodeDiscovery) OnEvent(evt zk.Event) {
 	nd.Debug("zookeeper event. type=%s state=%s path=%s", evt.Type.String(), evt.State.String(), evt.Path)
+	if !nd.started {
+		return
+	}
 	if evt.Type != zk.EventSession {
 		return
 	}

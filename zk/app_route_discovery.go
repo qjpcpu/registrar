@@ -3,7 +3,7 @@ package zk
 import (
 	"context"
 	"fmt"
-	"path/filepath"
+	"path"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -131,6 +131,7 @@ func (ard *AppRouteDiscovery) registerService() (err error) {
 	ard.myapps.Range(func(key any, value any) bool {
 		if err0 := ard.registerSingleAppRoute(value.(*AppRouteNode)); err0 != nil {
 			err = err0
+			return false
 		}
 		return true
 	})
@@ -231,9 +232,12 @@ func (ard *AppRouteDiscovery) fetchNodes() ([]*AppRouteNode, int32, error) {
 
 	var nodes []*AppRouteNode
 	for _, short := range children {
-		long := filepath.Join(key, short)
+		long := path.Join(key, short)
 		value, _, err := ard.Conn.Get(long)
 		if err != nil {
+			if err == zk.ErrNoNode {
+				continue
+			}
 			ard.Debug("fetch nodes fail. path=%s %v", long, err)
 			return nil, stat.Cversion, err
 		}
@@ -284,13 +288,21 @@ func (ard *AppRouteDiscovery) uniqNodes(nodes []*AppRouteNode) []*AppRouteNode {
 // the `allAppRoutes` cache with the new set.
 func (ard *AppRouteDiscovery) updateNodes(members []*AppRouteNode, reversion int32) {
 	publish := func(route gen.ApplicationRoute) {
+		var evt fmt.Stringer
 		switch route.State {
 		case gen.ApplicationStateLoaded:
-			ard.eventsCh <- events.EventApplicationLoaded{Name: route.Name, Node: route.Node, Weight: route.Weight}
+			evt = events.EventApplicationLoaded{Name: route.Name, Node: route.Node, Weight: route.Weight}
 		case gen.ApplicationStateRunning:
-			ard.eventsCh <- events.EventApplicationStarted{Name: route.Name, Node: route.Node, Weight: route.Weight, Mode: route.Mode}
+			evt = events.EventApplicationStarted{Name: route.Name, Node: route.Node, Weight: route.Weight, Mode: route.Mode}
 		case gen.ApplicationStateStopping:
-			ard.eventsCh <- events.EventApplicationStopping{Name: route.Name, Node: route.Node}
+			evt = events.EventApplicationStopping{Name: route.Name, Node: route.Node}
+		default:
+			return
+		}
+		select {
+		case ard.eventsCh <- evt:
+		default:
+			ard.Error("event channel full, dropping event %s", evt.String())
 		}
 	}
 	oldMembers := ard.allAppRoutes.Load()
@@ -308,7 +320,11 @@ func (ard *AppRouteDiscovery) updateNodes(members []*AppRouteNode, reversion int
 	newMembers := newMembersBuilder.Build()
 	oldMembers.Range(func(app gen.Atom, node gen.Atom, route gen.ApplicationRoute) bool {
 		if _, ok := newMembers.GetRoute(app, node); !ok {
-			ard.eventsCh <- events.EventApplicationStopped{Name: app, Node: node}
+			select {
+			case ard.eventsCh <- events.EventApplicationStopped{Name: app, Node: node}:
+			default:
+				ard.Error("event channel full, dropping EventApplicationStopped for %s@%s", app, node)
+			}
 		}
 		return true
 	})
@@ -350,30 +366,31 @@ func (ard *AppRouteDiscovery) keepWatching(ctx context.Context) error {
 // If they have, it fetches the new list, updates the node state, and re-establishes the watch.
 // This handles the case where changes happen between a watch event and setting a new watch.
 func (ard *AppRouteDiscovery) addWatcher(ctx context.Context, clusterKey string) (<-chan zk.Event, error) {
-	_, stat, evtChan, err := ard.Conn.ChildrenW(clusterKey)
-	if err != nil {
-		return nil, err
-	}
-
-	ard.Debug("watching path=%s children=%d cversion=%d", clusterKey, int(stat.NumChildren), stat.Cversion)
-	if !ard.isChildrenChanged(stat) {
-		return evtChan, nil
-	}
-
-	ard.Debug("chilren changed, wait 1 sec and watch again old_cversion=%d new_cversion=%d", int(ard.revision), int(stat.Cversion))
-	time.Sleep(1 * time.Second)
-	nodes, version, err := ard.fetchNodes()
-	if err != nil {
-		return nil, err
-	}
-	if !ard.containSelf(nodes) {
-		if err = ard.registerService(); err != nil {
+	for {
+		_, stat, evtChan, err := ard.Conn.ChildrenW(clusterKey)
+		if err != nil {
 			return nil, err
 		}
+
+		ard.Debug("watching path=%s children=%d cversion=%d", clusterKey, int(stat.NumChildren), stat.Cversion)
+		if !ard.isChildrenChanged(stat) {
+			return evtChan, nil
+		}
+
+		ard.Debug("chilren changed, wait 1 sec and watch again old_cversion=%d new_cversion=%d", int(ard.revision), int(stat.Cversion))
+		time.Sleep(1 * time.Second)
+		nodes, version, err := ard.fetchNodes()
+		if err != nil {
+			return nil, err
+		}
+		if !ard.containSelf(nodes) {
+			if err = ard.registerService(); err != nil {
+				return nil, err
+			}
+		}
+		// initialize members
+		ard.updateNodes(nodes, version)
 	}
-	// initialize members
-	ard.updateNodes(nodes, version)
-	return ard.addWatcher(ctx, clusterKey)
 }
 
 // _keepWatching blocks on various channels:

@@ -2,7 +2,7 @@ package zk
 
 import (
 	"fmt"
-	"path/filepath"
+	"path"
 
 	"github.com/qjpcpu/zk"
 )
@@ -79,10 +79,10 @@ func ensurePersistentNode(conn zkConn, dir string) error {
 	if exist {
 		return nil
 	}
-	if err = ensurePersistentNode(conn, filepath.Dir(dir)); err != nil {
+	if err = ensurePersistentNode(conn, path.Dir(dir)); err != nil {
 		return err
 	}
-	if _, err = conn.Create(dir, []byte{}, zk.FlagPersistent, zk.WorldACL(zk.PermAll)); err != nil {
+	if _, err = conn.Create(dir, []byte{}, zk.FlagPersistent, zk.WorldACL(zk.PermAll)); err != nil && err != zk.ErrNodeExists {
 		return err
 	}
 	return nil

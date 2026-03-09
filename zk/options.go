@@ -45,6 +45,7 @@ func (o Options) getZKOptions(nd *NodeDiscovery, opts ...zk.ConnOption) []zk.Con
 	options := []zk.ConnOption{
 		zk.WithLogger(logger),
 	}
+	options = append(options, o.ZkOptions...)
 	return append(options, opts...)
 }
 
