@@ -18,6 +18,10 @@ const (
 	// maxSelfHealRetries is the maximum number of consecutive re-registration
 	// attempts when the node's own znode is not found in the cluster.
 	maxSelfHealRetries = 1024
+	// selfHealRetryInitialBackoff is the initial delay between self-heal retries.
+	selfHealRetryInitialBackoff = time.Second
+	// selfHealRetryMaxBackoff is the upper bound for exponential self-heal backoff.
+	selfHealRetryMaxBackoff = 30 * time.Second
 )
 
 type client struct {

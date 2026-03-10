@@ -459,12 +459,23 @@ func (nd *NodeDiscovery) _keepWatching(stream <-chan zk.Event) error {
 			nd.Error("failure fetch nodes when watching service. %v", err)
 			return err
 		}
-		time.Sleep(time.Second)
+		time.Sleep(selfHealRetryBackoff(retries))
 	}
 	nd.updateNodes(nodes, version)
 	nd.updateLeadership(nodes)
 
 	return nil
+}
+
+func selfHealRetryBackoff(retry int) time.Duration {
+	backoff := selfHealRetryInitialBackoff
+	for i := 0; i < retry; i++ {
+		if backoff >= selfHealRetryMaxBackoff/2 {
+			return selfHealRetryMaxBackoff
+		}
+		backoff *= 2
+	}
+	return backoff
 }
 
 func (nd *NodeDiscovery) isChildrenChanged(stat *zk.Stat) bool {
