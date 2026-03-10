@@ -31,13 +31,14 @@ type NodeDiscovery struct {
 	/* state fields */
 	self            *Node             // Represents the current node's information.
 	Members         sync.Map          // A map of all discovered nodes in the cluster, including self. Key: gen.Atom(NodeName), Value: *Node.
-	revision        uint64            // The cversion of the root znode, used to detect changes.
-	fullpath        string            // The full ZK path of the ephemeral znode for this node.
+	revision        int32             // The cversion of the root znode, used to detect changes.
+	fullpath        *AtomicValue[string] // The full ZK path of the ephemeral znode for this node.
 	role            RoleType          // The current role of the node (Leader or Follower).
+	roleMu          sync.Mutex        // Protects role field from concurrent access.
 	roleChangedChan chan RoleType     // A channel to notify about role changes.
 	reWatch         chan struct{}     // A channel to trigger a re-watch, typically after a ZK session reconnect.
 	eventsCh        chan fmt.Stringer // A channel for sending node lifecycle events (joined/left).
-	started         bool
+	started         atomic.Bool
 	startMu         sync.Mutex
 	closeErrorLog   atomic.Bool
 	leaderNode      *AtomicValue[gen.Atom]
@@ -61,7 +62,7 @@ func (nd *NodeDiscovery) ResolveNodes() (nodes []gen.Atom) {
 func (nd *NodeDiscovery) StartMember() error {
 	nd.startMu.Lock()
 	defer nd.startMu.Unlock()
-	if nd.started {
+	if nd.started.Load() {
 		return nil
 	}
 
@@ -92,7 +93,7 @@ func (nd *NodeDiscovery) StartMember() error {
 	nd.updateLeadership(nodes)
 	nd.startWatching()
 
-	nd.started = true
+	nd.started.Store(true)
 	return nil
 }
 
@@ -164,7 +165,7 @@ func (nd *NodeDiscovery) registerService() error {
 		nd.Error("create child node fail. node=%s %v", nd.RootZnode, err)
 		return err
 	}
-	nd.fullpath = path
+	nd.fullpath.Store(path)
 	seq, err := parseSeq(path)
 	if err != nil {
 		nd.Error("create child node fail. node=%s %v", nd.RootZnode, err)
@@ -272,7 +273,7 @@ func (nd *NodeDiscovery) updateNodes(members []*Node, reversion int32) {
 		}
 		return true
 	})
-	nd.revision = uint64(reversion)
+	nd.revision = reversion
 }
 
 // updateLeadership determines the node's role (Leader or Follower) based on the current list of nodes.
@@ -283,10 +284,19 @@ func (nd *NodeDiscovery) updateLeadership(ns []*Node) {
 		role = Leader
 	}
 	nd.leaderNode.Store(nd.chooseLeaderFrom(ns))
-	if role != nd.role {
-		nd.Info("role changed from=%s to=%s", nd.role.String(), role.String())
-		nd.role = role
-		nd.roleChangedChan <- role
+
+	nd.roleMu.Lock()
+	oldRole := nd.role
+	nd.role = role
+	nd.roleMu.Unlock()
+
+	if role != oldRole {
+		nd.Info("role changed from=%s to=%s", oldRole.String(), role.String())
+		select {
+		case nd.roleChangedChan <- role:
+		default:
+			nd.Error("role change channel full, dropping notification from=%s to=%s", oldRole.String(), role.String())
+		}
 	}
 }
 
@@ -348,6 +358,8 @@ func (nd *NodeDiscovery) startWatching() {
 				if err != zk.ErrConnectionClosed {
 					nd.Error("failed to keepWatching. %v", err)
 				}
+				// Backoff before retrying to avoid tight error loops
+				time.Sleep(time.Second)
 			}
 		}
 	}()
@@ -370,6 +382,10 @@ func (nd *NodeDiscovery) keepWatching(ctx context.Context) error {
 // This handles the case where changes happen between a watch event and setting a new watch.
 func (nd *NodeDiscovery) addWatcher(ctx context.Context, clusterKey string) (<-chan zk.Event, error) {
 	for {
+		if nd.Shutdown.Closed() {
+			return nil, ErrShutdown
+		}
+
 		_, stat, evtChan, err := nd.Conn.ChildrenW(clusterKey)
 		if err != nil {
 			return nil, err
@@ -406,7 +422,7 @@ func (nd *NodeDiscovery) _keepWatching(stream <-chan zk.Event) error {
 	case event := <-stream:
 		if err := event.Err; err != nil {
 			nd.Error("failure watching service. %v", err)
-			if childrenNotContains(nd.Conn, nd.RootZnode, path.Base(nd.fullpath)) {
+			if childrenNotContains(nd.Conn, nd.RootZnode, path.Base(nd.fullpath.Load())) {
 				nd.Debug("node register info lost, register self again")
 				if regErr := nd.registerService(); regErr != nil {
 					nd.Error("re-register service fail %v", regErr)
@@ -427,7 +443,11 @@ func (nd *NodeDiscovery) _keepWatching(stream <-chan zk.Event) error {
 		nd.Error("failure fetch nodes when watching service. %v", err)
 		return err
 	}
-	for !nd.containSelf(nodes) {
+	for retries := 0; !nd.containSelf(nodes); retries++ {
+		if retries >= maxSelfHealRetries {
+			nd.Error("exceeded max self-heal retries (%d), giving up", maxSelfHealRetries)
+			return fmt.Errorf("exceeded max self-heal retries (%d)", maxSelfHealRetries)
+		}
 		// i am lost, register self
 		// This is a self-healing mechanism. If the node's znode is gone, re-register it.
 		if err = nd.registerService(); err != nil {
@@ -448,7 +468,7 @@ func (nd *NodeDiscovery) _keepWatching(stream <-chan zk.Event) error {
 }
 
 func (nd *NodeDiscovery) isChildrenChanged(stat *zk.Stat) bool {
-	return stat.Cversion != int32(nd.revision)
+	return stat.Cversion != nd.revision
 }
 
 // containSelf checks if the current node's registration is present and correct
@@ -484,10 +504,10 @@ func (nd *NodeDiscovery) Stop() (err error) {
 }
 
 func (nd *NodeDiscovery) deregisterService() error {
-	if nd.fullpath != "" {
-		nd.Conn.Delete(nd.fullpath, -1)
+	if fp := nd.fullpath.Load(); fp != "" {
+		nd.Conn.Delete(fp, -1)
 	}
-	nd.fullpath = ""
+	nd.fullpath.Store("")
 	return nil
 }
 
@@ -495,7 +515,7 @@ func (nd *NodeDiscovery) deregisterService() error {
 // It is responsible for triggering re-watch on reconnection and managing leadership state on disconnection.
 func (nd *NodeDiscovery) OnEvent(evt zk.Event) {
 	nd.Debug("zookeeper event. type=%s state=%s path=%s", evt.Type.String(), evt.State.String(), evt.Path)
-	if !nd.started {
+	if !nd.started.Load() {
 		return
 	}
 	if evt.Type != zk.EventSession {
@@ -503,10 +523,19 @@ func (nd *NodeDiscovery) OnEvent(evt zk.Event) {
 	}
 	switch evt.State {
 	case zk.StateConnecting, zk.StateDisconnected, zk.StateExpired:
-		if nd.role == Leader {
-			nd.Info("role changed: from=%s  to=%s", Leader.String(), Follower.String())
+		nd.roleMu.Lock()
+		wasLeader := nd.role == Leader
+		if wasLeader {
 			nd.role = Follower
-			nd.roleChangedChan <- Follower
+		}
+		nd.roleMu.Unlock()
+		if wasLeader {
+			nd.Info("role changed: from=%s  to=%s", Leader.String(), Follower.String())
+			select {
+			case nd.roleChangedChan <- Follower:
+			default:
+				nd.Error("role change channel full, dropping Follower notification on disconnect")
+			}
 		}
 	case zk.StateConnected:
 	case zk.StateHasSession:

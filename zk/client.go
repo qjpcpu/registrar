@@ -13,7 +13,12 @@ var (
 	ErrShutdown = errors.New("registrar shutdown")
 )
 
-const ZkRoot = `/ergo`
+const (
+	ZkRoot = `/ergo`
+	// maxSelfHealRetries is the maximum number of consecutive re-registration
+	// attempts when the node's own znode is not found in the cluster.
+	maxSelfHealRetries = 1024
+)
 
 type client struct {
 	options  Options
@@ -55,6 +60,7 @@ func newClient(options *Options) *client {
 		EventRef:  aEventRef,
 
 		self:            &Node{},
+		fullpath:        NewAtomicValue[string](),
 		role:            Follower,
 		roleChangedChan: make(chan RoleType, 1),
 		reWatch:         make(chan struct{}, 1),
@@ -90,6 +96,7 @@ func connectToZooKeeper(options *Options, c *client) (zkConn, error) {
 	conn := &zkConnImpl{conn: zkconn}
 	if auth := options.Auth; !auth.isEmpty() {
 		if err = conn.AddAuth(auth.Scheme, []byte(auth.Credential)); err != nil {
+			conn.Close()
 			return nil, err
 		}
 	}
@@ -98,17 +105,19 @@ func connectToZooKeeper(options *Options, c *client) (zkConn, error) {
 
 func (c *client) Shutdown() (err error) {
 	c.shutdown.Close(func() {
-		err0 := c.nodeDisc.Stop()
-		if err0 != nil {
-			err = err0
+		// shutdown channel is already closed at this point,
+		// watch goroutines will detect it and exit.
+		var errs []error
+		if err0 := c.nodeDisc.Stop(); err0 != nil {
+			errs = append(errs, err0)
 		}
 		if c.options.SupportRegisterApplication {
-			err0 = c.appDisc.Stop()
-			if err0 != nil {
-				err = err0
+			if err0 := c.appDisc.Stop(); err0 != nil {
+				errs = append(errs, err0)
 			}
 		}
 		c.conn.Close()
+		err = errors.Join(errs...)
 	})
 	return
 }

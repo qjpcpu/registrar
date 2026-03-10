@@ -51,11 +51,13 @@ func NewCloseChan() *CloseChan {
 
 func (c *CloseChan) Close(f func()) {
 	c.closeOnce.Do(func() {
+		// Signal shutdown first so goroutines can detect it immediately,
+		// then run cleanup callback after goroutines have a chance to exit.
+		close(c.ch)
+		c.closed.Store(true)
 		if f != nil {
 			f()
 		}
-		close(c.ch)
-		c.closed.Store(true)
 	})
 }
 
