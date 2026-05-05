@@ -345,6 +345,8 @@ func (ard *AppRouteDiscovery) startWatching() {
 				if err != zk.ErrConnectionClosed {
 					ard.Debug("failed to keepWatching. %v", err)
 				}
+				// Backoff before retrying to avoid tight error loops.
+				time.Sleep(time.Second)
 			}
 		}
 	}()
