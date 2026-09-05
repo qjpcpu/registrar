@@ -4,7 +4,7 @@
 
 ## Quick start
 
-Create a Redis registrar and assign it to the Ergo node's network options. Nodes using the same Redis deployment and `Cluster` namespace discover each other.
+Create a Redis registrar and assign it to the Ergo node's network options. Nodes using the same Redis deployment, database, and `Cluster` namespace discover each other.
 
 ```go
 import "github.com/qjpcpu/registrar/redis"
@@ -55,6 +55,7 @@ redis.Options{
 | Option | Default | Meaning |
 |---|---|---|
 | `Cluster` | `default` | Shared Ergo cluster namespace |
+| `DB` | `0` | Optional database index for single-instance and Sentinel modes; ignored in Redis Cluster mode |
 | `Username` | empty | Optional Redis ACL username |
 | `Password` | empty | Optional Redis password |
 | `SessionTimeout` | 10 seconds | Lease lifetime, using Redis server time |

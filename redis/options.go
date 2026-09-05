@@ -9,6 +9,8 @@ type Options struct {
 	Cluster string
 	// Endpoints contains Redis addresses, or Sentinel addresses with MasterName.
 	Endpoints []string
+	// DB selects the database for single-instance and Sentinel modes. Defaults to 0.
+	DB int
 	// Username and Password optionally authenticate to Redis.
 	Username string
 	Password string

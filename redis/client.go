@@ -61,6 +61,7 @@ func Create(options Options) (gen.Registrar, error) {
 	// Context deadlines bound each operation, including retries during failover.
 	common := goredis.UniversalOptions{
 		Addrs: options.Endpoints, MasterName: options.MasterName,
+		DB:       options.DB,
 		Username: options.Username, Password: options.Password,
 		ContextTimeoutEnabled: true,
 	}
