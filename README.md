@@ -18,6 +18,13 @@ A `gen.Registrar` implementation for [Apache ZooKeeper](https://zookeeper.apache
 - **Features**: Service discovery, leader election, real-time events.
 - **Documentation**: [zk/README.md](zk/README.md)
 
+### Redis
+
+A `gen.Registrar` implementation for Redis single instances, Sentinel, and Redis Cluster.
+
+- **Features**: Lease-based node discovery, registration-order leader election, application routes, and shared events through periodic snapshots.
+- **Documentation**: [redis/README.md](redis/README.md)
+
 ## License
 
 This project is licensed under the MIT License.
