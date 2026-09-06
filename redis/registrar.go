@@ -43,8 +43,17 @@ func (c *client) Version() gen.Version {
 }
 
 func (c *client) Nodes() ([]gen.Atom, error) {
+	if c.ctx.Err() != nil {
+		return nil, ErrShutdown
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	if c.syncErr != nil {
+		return nil, c.syncErr
+	}
+	if c.lastSync.IsZero() {
+		return nil, ErrNotSynchronized
+	}
 	var nodes []gen.Atom
 	for name := range c.members {
 		if name != c.local.Name {

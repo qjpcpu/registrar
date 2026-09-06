@@ -59,7 +59,7 @@ redis.Options{
 | `Username` | empty | Optional Redis ACL username |
 | `Password` | empty | Optional Redis password |
 | `SessionTimeout` | 10 seconds | Lease lifetime, using Redis server time |
-| `PollInterval` | 1 second | Interval between discovery snapshots |
+| `PollInterval` | 1 second | Interval between discovery revision checks |
 | `SupportRegisterApplication` | `false` | Enable application registration and discovery |
 
 Renewal runs every 30% of `SessionTimeout`, or every 3 seconds by default. Each Redis operation has a deadline of the smaller of that interval and one second.
@@ -92,15 +92,16 @@ Redis failover can lose recently acknowledged writes because replication is asyn
 
 ## Storage
 
-For each namespace, three keys share a hash tag derived from the base64url encoding of `Cluster`:
+For each namespace, four keys share a hash tag containing the original `Cluster` name. An empty `Cluster` uses `default`; names containing `{` or `}` are rejected by `Create`:
 
 ```text
-ergo:{encoded-cluster}:sequence  # increasing registration sequence
-ergo:{encoded-cluster}:members   # instance ID -> sequence and JSON record
-ergo:{encoded-cluster}:leases    # instance ID -> expiry in Redis milliseconds
+ergo:{cluster}:sequence  # increasing registration sequence
+ergo:{cluster}:members   # instance ID -> sequence and JSON record
+ergo:{cluster}:leases    # instance ID -> expiry in Redis milliseconds
+ergo:{cluster}:revision  # discovery change token
 ```
 
-Lua atomically publishes, renews, removes, or cleans expired records and reads a snapshot. Each Ergo cluster's data occupies one Redis Cluster slot. Expiry is enforced when snapshots are read; with no active registrars, expired records remain until the next snapshot. The sequence counter remains after all nodes leave.
+Lua atomically publishes, renews, removes, or cleans expired records. Snapshot checks first clean expired members and compare the discovery revision; HGETALL runs only when that revision differs. Joining, leaving, expiration, and registration data changes update the revision. Pure renewal preserves it and updates only lease deadlines, without rewriting the member payload. Application changes are coalesced until the next poll or renewal tick, so visibility may be delayed by up to the shorter of those intervals. Application records are serialized in stable name order. Random change tokens also distinguish recreated data after a Redis reset. Each Ergo cluster's data occupies one Redis Cluster slot. Expiry is enforced when snapshots are read; with no active registrars, expired records remain until the next snapshot. The sequence counter remains after all nodes leave.
 
 ## Tests
 
@@ -126,3 +127,5 @@ go test -race ./redis -run TestRedisDeployments
 ```
 
 On dedicated disposable deployments, add `REDIS_TEST_FAILOVER=1` to exercise Sentinel promotion, Cluster slot migration, and Cluster replica promotion. These tests change Redis topology; the Cluster must have a replica for every master. External tests skip when their endpoint variable is absent.
+
+`Nodes()` reports `ErrNotSynchronized` before the first successful snapshot, the latest synchronization error during an outage, and `ErrShutdown` after termination. A successful snapshot clears the error. The registrar retains the last successful synchronization time internally; reading its member cache does not advance that time. `Resolve` continues to provide cached transport routes during temporary synchronization failures.

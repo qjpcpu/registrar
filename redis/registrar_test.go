@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -333,6 +334,109 @@ func TestSnapshotNodeIncarnationChanges(t *testing.T) {
 			c.applySnapshot(snapshot)
 			if got := node.take(); len(got) != 0 {
 				t.Fatalf("stable registration emitted events: %#v", got)
+			}
+		})
+	}
+}
+
+func TestNodesReportsSynchronizationFailureAndRecovery(t *testing.T) {
+	server := miniredis.RunT(t)
+	c := makeClient(t, server.Addr(), false)
+	if _, err := c.Nodes(); !errors.Is(err, ErrNotSynchronized) {
+		t.Fatal(err)
+	}
+	startClient(t, c, "health@localhost")
+	if _, err := c.Nodes(); err != nil {
+		t.Fatal(err)
+	}
+	c.mu.RLock()
+	last := c.lastSync
+	c.mu.RUnlock()
+	server.SetError("ERR injected unavailable")
+	eventually(t, func() bool { _, err := c.Nodes(); return err != nil })
+	c.mu.RLock()
+	failedAt := c.lastSync
+	c.mu.RUnlock()
+	if failedAt.Before(last) || failedAt.IsZero() {
+		t.Fatal("lost last successful sync time")
+	}
+	if _, err := c.Resolve("health@localhost"); err != nil {
+		t.Fatal("cached transport route unavailable", err)
+	}
+	server.SetError("")
+	eventually(t, func() bool { _, err := c.Nodes(); return err == nil })
+	c.mu.RLock()
+	recoveredAt := c.lastSync
+	c.mu.RUnlock()
+	if !recoveredAt.After(failedAt) {
+		t.Fatal("sync timestamp not advanced")
+	}
+	c.Terminate()
+	if _, err := c.Nodes(); !errors.Is(err, ErrShutdown) {
+		t.Fatal(err)
+	}
+}
+
+func TestApplicationChangesCoalesceUntilPoll(t *testing.T) {
+	server := miniredis.RunT(t)
+	reg, err := Create(Options{Endpoints: []string{server.Addr()}, SessionTimeout: 10 * time.Second, PollInterval: 200 * time.Millisecond, SupportRegisterApplication: true})
+	requireOK(t, err)
+	c := reg.(*client)
+	defer c.Terminate()
+	startClient(t, c, "coalesce@localhost")
+	before := server.CommandCount()
+	app := gen.ApplicationRoute{Name: "app", Node: "coalesce@localhost", State: gen.ApplicationStateRunning}
+	for i := 0; i < 100; i++ {
+		app.Weight = i
+		requireOK(t, c.RegisterApplicationRoute(app))
+		time.Sleep(time.Millisecond)
+	}
+	eventually(t, func() bool {
+		routes, e := c.ResolveApplication("app")
+		return e == nil && len(routes) == 1 && routes[0].Weight == 99
+	})
+	if commands := server.CommandCount() - before; commands > 30 {
+		t.Fatalf("100 updates generated %d Redis commands", commands)
+	}
+}
+
+func TestCreateClusterNamespace(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		cluster string
+		want    string
+		invalid bool
+	}{
+		{name: "default", want: "default"},
+		{name: "original", cluster: "orders-prod", want: "orders-prod"},
+		{name: "unicode", cluster: "订单:生产", want: "订单:生产"},
+		{name: "opening brace", cluster: "orders{prod", invalid: true},
+		{name: "closing brace", cluster: "orders}prod", invalid: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			reg, err := Create(Options{Cluster: tt.cluster})
+			if tt.invalid {
+				if reg != nil {
+					reg.Terminate()
+				}
+				if err == nil {
+					t.Fatal("expected invalid cluster name error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reg.Terminate()
+			c := reg.(*client)
+			if c.options.Cluster != tt.want {
+				t.Fatalf("cluster = %q, want %q", c.options.Cluster, tt.want)
+			}
+			prefix := "ergo:{" + tt.want + "}:"
+			for _, key := range c.store.keys {
+				if !strings.HasPrefix(key, prefix) {
+					t.Fatalf("key %q must start with %q", key, prefix)
+				}
 			}
 		})
 	}

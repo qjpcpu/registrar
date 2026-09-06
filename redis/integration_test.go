@@ -199,7 +199,7 @@ func migrateSlot(t *testing.T, c *client) {
 	defer dst.Close()
 	requireOK(t, dst.Do(ctx, "CLUSTER", "SETSLOT", slot, "IMPORTING", source.ID).Err())
 	requireOK(t, src.Do(ctx, "CLUSTER", "SETSLOT", slot, "MIGRATING", target.ID).Err())
-	// Move the registrar's three keys together so Lua never sees a split dataset.
+	// Move the registrar's keys together so Lua never sees a split dataset.
 	parts := strings.Split(target.Addr, ":")
 	args := []any{"MIGRATE", parts[0], parts[1], "", 0, 5000, "KEYS"}
 	for _, key := range c.store.keys {

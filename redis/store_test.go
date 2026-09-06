@@ -73,3 +73,56 @@ func TestStoreLeaseAndRetry(t *testing.T) {
 		t.Fatal("remove affected another member")
 	}
 }
+
+func TestSnapshotRevisionTracksDiscoveryChanges(t *testing.T) {
+	server := miniredis.RunT(t)
+	now := time.Now()
+	server.SetTime(now)
+	raw := goredis.NewClient(&goredis.Options{Addr: server.Addr()})
+	defer raw.Close()
+	s := newStore(raw, "revisions")
+	ctx := context.Background()
+	record := registration{Name: "node", Apps: []gen.ApplicationRoute{{Name: "b"}, {Name: "a"}}}
+	requireOK(t, s.write(ctx, "node", record, time.Minute))
+	members, version, changed, err := s.snapshotSince(ctx, "")
+	requireOK(t, err)
+	if !changed || len(members) != 1 {
+		t.Fatal(members, changed)
+	}
+	record.Apps[0], record.Apps[1] = record.Apps[1], record.Apps[0]
+	requireOK(t, s.write(ctx, "node", record, time.Minute))
+	members, next, changed, err := s.snapshotSince(ctx, version)
+	requireOK(t, err)
+	if changed || next != version || members != nil {
+		t.Fatal("renewal returned a full snapshot")
+	}
+	record.Apps[0].State = gen.ApplicationStateRunning
+	requireOK(t, s.write(ctx, "node", record, time.Minute))
+	members, next, changed, err = s.snapshotSince(ctx, version)
+	requireOK(t, err)
+	if !changed || next == version || members[0].Apps[0].State != gen.ApplicationStateRunning {
+		t.Fatal("application update missing")
+	}
+	version = next
+	server.SetTime(now.Add(time.Minute))
+	members, next, changed, err = s.snapshotSince(ctx, version)
+	requireOK(t, err)
+	if !changed || next == version || len(members) != 0 {
+		t.Fatal("expiration did not change snapshot")
+	}
+	requireOK(t, s.write(ctx, "node", record, time.Minute))
+	_, version, _, err = s.snapshotSince(ctx, next)
+	requireOK(t, err)
+	requireOK(t, s.remove(ctx, "node"))
+	members, next, changed, err = s.snapshotSince(ctx, version)
+	requireOK(t, err)
+	if !changed || len(members) != 0 {
+		t.Fatal("removal missing")
+	}
+	requireOK(t, s.remove(ctx, "node"))
+	_, version, changed, err = s.snapshotSince(ctx, next)
+	requireOK(t, err)
+	if changed || version != next {
+		t.Fatal("idempotent removal changed revision")
+	}
+}

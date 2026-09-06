@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,33 +15,41 @@ import (
 )
 
 var ErrShutdown = errors.New("registrar shutdown")
+var ErrNotSynchronized = errors.New("registrar has not synchronized")
 
 type client struct {
-	options   Options
-	store     *store
-	id        string
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wake      chan struct{}
-	done      chan struct{}
-	lifecycle sync.Mutex
-	stopped   bool
-	started   bool
-	node      gen.NodeRegistrar
-	event     gen.Event
-	eventRef  gen.Ref
-	mu        sync.RWMutex
-	local     registration
-	apps      map[gen.Atom]gen.ApplicationRoute
-	members   map[gen.Atom]member
-	appRoutes map[gen.Atom][]gen.ApplicationRoute
-	leader    gen.Atom
-	isLeader  bool
+	options         Options
+	store           *store
+	id              string
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wake            chan struct{}
+	done            chan struct{}
+	lifecycle       sync.Mutex
+	stopped         bool
+	started         bool
+	node            gen.NodeRegistrar
+	event           gen.Event
+	eventRef        gen.Ref
+	mu              sync.RWMutex
+	local           registration
+	apps            map[gen.Atom]gen.ApplicationRoute
+	members         map[gen.Atom]member
+	appRoutes       map[gen.Atom][]gen.ApplicationRoute
+	leader          gen.Atom
+	isLeader        bool
+	snapshotVersion string
+	lastSnapshot    []member
+	syncErr         error
+	lastSync        time.Time
 }
 
 func Create(options Options) (gen.Registrar, error) {
 	if options.Cluster == "" {
 		options.Cluster = "default"
+	}
+	if strings.ContainsAny(options.Cluster, "{}") {
+		return nil, fmt.Errorf("cluster name must not contain { or }")
 	}
 	if options.SessionTimeout == 0 {
 		options.SessionTimeout = 10 * time.Second
@@ -143,12 +152,29 @@ func (c *client) publish() error {
 	return c.store.write(ctx, c.id, record, c.options.SessionTimeout)
 }
 
-func (c *client) refresh() error {
+func (c *client) refresh() (refreshErr error) {
+	defer func() {
+		c.mu.Lock()
+		c.syncErr = refreshErr
+		if refreshErr == nil {
+			c.lastSync = time.Now()
+		}
+		c.mu.Unlock()
+	}()
 	ctx, cancel := c.operationContext(c.ctx)
-	members, err := c.store.snapshot(ctx)
+	members, version, changed, err := c.store.snapshotSince(ctx, c.snapshotVersion)
 	cancel()
 	if err != nil {
 		return err
+	}
+	if !changed {
+		c.mu.RLock()
+		synchronized := c.leader != ""
+		c.mu.RUnlock()
+		if synchronized {
+			return nil
+		}
+		members = c.lastSnapshot
 	}
 	found := false
 	for _, m := range members {
@@ -162,12 +188,13 @@ func (c *client) refresh() error {
 			return err
 		}
 		ctx, cancel := c.operationContext(c.ctx)
-		members, err = c.store.snapshot(ctx)
+		members, version, _, err = c.store.snapshotSince(ctx, "")
 		cancel()
 		if err != nil {
 			return err
 		}
 	}
+	c.snapshotVersion, c.lastSnapshot = version, members
 	c.applySnapshot(members)
 	return nil
 }
@@ -185,12 +212,8 @@ func (c *client) run() {
 		case <-c.ctx.Done():
 			return
 		case <-c.wake:
+			// Publish the latest application state on the next poll/renew tick.
 			dirty = true
-			err = c.publish()
-			if err == nil {
-				dirty = false
-				err = c.refresh()
-			}
 		case <-renew.C:
 			err = c.publish()
 			if err == nil {
@@ -209,6 +232,9 @@ func (c *client) run() {
 			}
 		}
 		if err != nil && c.ctx.Err() == nil {
+			c.mu.Lock()
+			c.syncErr = err
+			c.mu.Unlock()
 			c.demote()
 			c.node.Log().Error("(registrar/redis) synchronization failed: %v", err)
 		}

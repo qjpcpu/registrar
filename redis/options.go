@@ -5,7 +5,7 @@ import "time"
 
 // Options configures the Redis connection and discovery intervals.
 type Options struct {
-	// Cluster isolates Ergo clusters sharing Redis. Defaults to "default".
+	// Cluster isolates Ergo clusters sharing Redis. Defaults to "default". Must not contain { or }.
 	Cluster string
 	// Endpoints contains Redis addresses, or Sentinel addresses with MasterName.
 	Endpoints []string
