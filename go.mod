@@ -2,7 +2,7 @@ module github.com/qjpcpu/registrar
 
 go 1.21
 
-require ergo.services/ergo v1.999.320
+require ergo.services/ergo v1.999.330
 
 require (
 	github.com/alicebob/miniredis/v2 v2.35.0
@@ -15,3 +15,5 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 )
+
+replace ergo.services/ergo => github.com/qjpcpu/ergo v1.999.330-pid.1

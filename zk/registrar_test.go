@@ -10,6 +10,7 @@ import (
 
 	"ergo.services/ergo"
 	"ergo.services/ergo/act"
+	ergoapp "ergo.services/ergo/app"
 	"ergo.services/ergo/gen"
 	"github.com/qjpcpu/registrar/events"
 	"github.com/qjpcpu/zk"
@@ -109,11 +110,12 @@ func CreateApp(role string, result *Result) gen.ApplicationBehavior {
 }
 
 type MyApp struct {
+	ergoapp.Application
 	role   string
 	result *Result
 }
 
-func (app *MyApp) Load(node gen.Node, args ...any) (gen.ApplicationSpec, error) {
+func (app *MyApp) Load(args ...any) (gen.ApplicationSpec, error) {
 	return gen.ApplicationSpec{
 		Name:        "myapp",
 		Description: "test application with myactor",
@@ -127,10 +129,6 @@ func (app *MyApp) Load(node gen.Node, args ...any) (gen.ApplicationSpec, error) 
 		},
 	}, nil
 }
-
-func (app *MyApp) Start(mode gen.ApplicationMode) {}
-
-func (app *MyApp) Terminate(reason error) {}
 
 func factory() gen.ProcessBehavior {
 	return &myActor{}

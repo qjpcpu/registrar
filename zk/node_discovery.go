@@ -29,15 +29,15 @@ type NodeDiscovery struct {
 	EventRef  *AtomicValue[gen.Ref]
 
 	/* state fields */
-	self            *Node             // Represents the current node's information.
-	Members         sync.Map          // A map of all discovered nodes in the cluster, including self. Key: gen.Atom(NodeName), Value: *Node.
-	revision        int32             // The cversion of the root znode, used to detect changes.
+	self            *Node                // Represents the current node's information.
+	Members         sync.Map             // A map of all discovered nodes in the cluster, including self. Key: gen.Atom(NodeName), Value: *Node.
+	revision        int32                // The cversion of the root znode, used to detect changes.
 	fullpath        *AtomicValue[string] // The full ZK path of the ephemeral znode for this node.
-	role            RoleType          // The current role of the node (Leader or Follower).
-	roleMu          sync.Mutex        // Protects role field from concurrent access.
-	roleChangedChan chan RoleType     // A channel to notify about role changes.
-	reWatch         chan struct{}     // A channel to trigger a re-watch, typically after a ZK session reconnect.
-	eventsCh        chan fmt.Stringer // A channel for sending node lifecycle events (joined/left).
+	role            RoleType             // The current role of the node (Leader or Follower).
+	roleMu          sync.Mutex           // Protects role field from concurrent access.
+	roleChangedChan chan RoleType        // A channel to notify about role changes.
+	reWatch         chan struct{}        // A channel to trigger a re-watch, typically after a ZK session reconnect.
+	eventsCh        chan fmt.Stringer    // A channel for sending node lifecycle events (joined/left).
 	started         atomic.Bool
 	startMu         sync.Mutex
 	closeErrorLog   atomic.Bool
@@ -525,10 +525,10 @@ func (nd *NodeDiscovery) deregisterService() error {
 // OnEvent handles ZooKeeper session events.
 // It is responsible for triggering re-watch on reconnection and managing leadership state on disconnection.
 func (nd *NodeDiscovery) OnEvent(evt zk.Event) {
-	nd.Debug("zookeeper event. type=%s state=%s path=%s", evt.Type.String(), evt.State.String(), evt.Path)
 	if !nd.started.Load() {
 		return
 	}
+	nd.Debug("zookeeper event. type=%s state=%s path=%s", evt.Type.String(), evt.State.String(), evt.Path)
 	if evt.Type != zk.EventSession {
 		return
 	}

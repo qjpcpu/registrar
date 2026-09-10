@@ -17,7 +17,7 @@ func (c *client) Resolve(name gen.Atom) ([]gen.Route, error) {
 }
 
 // ResolveApplication returns all known routes for a given application name
-func (c *client) ResolveApplication(name gen.Atom) ([]gen.ApplicationRoute, error) {
+func (c *client) ResolveApplication(name gen.Atom) (gen.ApplicationRoutes, error) {
 	if !c.options.SupportRegisterApplication {
 		return nil, gen.ErrUnsupported
 	}

@@ -36,7 +36,7 @@ type AppRouteDiscovery struct {
 	revision      uint64                     // The cversion of the root znode, used to detect changes.
 	reWatch       chan struct{}              // A channel to trigger a re-watch, typically after a ZK session reconnect.
 	eventsCh      chan fmt.Stringer          // A channel for sending application lifecycle events.
-	started       bool
+	started       atomic.Bool
 	startMu       sync.Mutex
 	closeErrorLog atomic.Bool
 }
@@ -87,7 +87,7 @@ func (ard *AppRouteDiscovery) UnregisterApplicationRoute(name gen.Atom) error {
 func (ard *AppRouteDiscovery) StartMember() error {
 	ard.startMu.Lock()
 	defer ard.startMu.Unlock()
-	if ard.started {
+	if ard.started.Load() {
 		return nil
 	}
 	if err := ard.init(); err != nil {
@@ -113,7 +113,7 @@ func (ard *AppRouteDiscovery) StartMember() error {
 	ard.updateNodes(nodes, version)
 	ard.startWatching()
 
-	ard.started = true
+	ard.started.Store(true)
 	return nil
 }
 
@@ -493,7 +493,7 @@ func (ard *AppRouteDiscovery) deregisterService() error {
 // OnEvent handles ZooKeeper session events.
 // It is responsible for triggering a re-watch when a session is re-established.
 func (ard *AppRouteDiscovery) OnEvent(evt zk.Event) {
-	if !ard.started {
+	if !ard.started.Load() {
 		return
 	}
 	if evt.Type != zk.EventSession {

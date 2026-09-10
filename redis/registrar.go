@@ -72,7 +72,7 @@ func (c *client) Resolve(name gen.Atom) ([]gen.Route, error) {
 	}
 	return append([]gen.Route(nil), m.Routes...), nil
 }
-func (c *client) ResolveApplication(name gen.Atom) ([]gen.ApplicationRoute, error) {
+func (c *client) ResolveApplication(name gen.Atom) (gen.ApplicationRoutes, error) {
 	if !c.options.SupportRegisterApplication {
 		return nil, gen.ErrUnsupported
 	}
